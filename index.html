@@ -67,6 +67,11 @@
 
 <main>
   <section id="today" class="screen active">
+    <div class="card">
+      <label for="journalDate">Journal alimentaire</label>
+      <div class="split" style="margin-top:8px"><input id="journalDate" type="date" aria-label="Date du journal"><button class="secondary" onclick="goToday()">Aujourd’hui</button></div>
+      <p class="note">Enregistre uniquement ce que tu as réellement mangé. Les données restent sur cet appareil.</p>
+    </div>
     <div class="grid">
       <div class="card">
         <div class="muted small">Poids actuel</div>
@@ -81,7 +86,7 @@
     </div>
 
     <div class="card">
-      <h2>Macros du jour</h2>
+      <h2>Totaux de la journée sélectionnée</h2>
       <div class="small">Protéines <span id="pText" class="muted"></span></div>
       <div class="progress green"><div id="pBar"></div></div>
       <div class="small">Glucides <span id="cText" class="muted"></span></div>
@@ -91,8 +96,34 @@
     </div>
 
     <div class="card">
-      <div class="row"><h2>Repas</h2><span class="pill">Séance 20:00</span></div>
-      <div id="meals"></div>
+      <h2>Ajouter un aliment</h2>
+      <form id="foodForm">
+        <label for="foodName">Aliment ou plat</label>
+        <input id="foodName" required maxlength="120" placeholder="Ex. pâtes complètes, bavette, œufs durs">
+        <div class="split" style="margin-top:10px">
+          <div><label for="foodMeal">Repas</label><select id="foodMeal"><option>Petit-déjeuner</option><option>Déjeuner</option><option>Dîner</option><option>Collation</option></select></div>
+          <div><label for="foodBasis">Valeurs indiquées</label><select id="foodBasis"><option value="100">Pour 100 g</option><option value="portion">Pour 1 pièce / portion</option></select></div>
+        </div>
+        <div class="split" style="margin-top:10px">
+          <div><label id="quantityLabel" for="foodQuantity">Quantité mangée (g)</label><input id="foodQuantity" type="number" min="0.01" max="10000" step="any" required inputmode="decimal"></div>
+          <div><label for="foodCondition">État pesé</label><select id="foodCondition"><option>Cru / sec</option><option>Cuit</option><option>Prêt à consommer</option></select></div>
+        </div>
+        <p class="note">Recopie les valeurs de l’emballage ou d’une source nutritionnelle correspondant à l’état pesé. Pour un plat entier, choisis « 1 pièce / portion » et saisis ses valeurs totales.</p>
+        <div class="split">
+          <div><label for="foodKcal">Calories (kcal)</label><input id="foodKcal" type="number" min="0" max="10000" step="any" required inputmode="decimal"></div>
+          <div><label for="foodP">Protéines (g)</label><input id="foodP" type="number" min="0" max="1000" step="any" required inputmode="decimal"></div>
+          <div><label for="foodC">Glucides (g)</label><input id="foodC" type="number" min="0" max="1000" step="any" required inputmode="decimal"></div>
+          <div><label for="foodF">Lipides (g)</label><input id="foodF" type="number" min="0" max="1000" step="any" required inputmode="decimal"></div>
+        </div>
+        <div class="row" style="margin-top:12px"><button id="foodSubmit" class="primary" type="submit">Ajouter au journal</button><button id="cancelEdit" class="secondary" type="button" hidden onclick="resetFoodForm()">Annuler</button></div>
+        <p id="foodFeedback" class="note" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+    <div class="card"><h2>Ce que j’ai mangé</h2><div id="journalEntries"></div></div>
+    <div class="card">
+      <details><summary>Ancien planning — repas prédéfinis</summary>
+      <p class="note">Ne coche un repas que si tu l’as mangé tel quel. S’il est déjà saisi au-dessus, ne le coche pas : il serait compté deux fois. Les valeurs du planning sont des estimations.</p>
+      <div id="meals"></div></details>
     </div>
   </section>
 
@@ -212,18 +243,74 @@ const meals = [
 ];
 
 const targetMacros = {p:170,c:360,f:70};
-let state = JSON.parse(localStorage.getItem("masseState") || "{}");
+let state;
+try { state = JSON.parse(localStorage.getItem("masseState") || "{}"); } catch { state = {}; }
+if (!state || typeof state !== "object" || Array.isArray(state)) state = {};
 state.done = state.done || {};
 state.weights = state.weights || [];
 state.shopping = state.shopping || {};
 state.settings = state.settings || {goalWeight:80,kcalTarget:2800};
 
-function save(){ localStorage.setItem("masseState",JSON.stringify(state)); }
+function localDate(d=new Date()) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+let selectedDate = localDate();
+let editingId = null;
+state.journal = state.journal || {};
+// Preserve undated legacy checkmarks without assigning them to an invented date.
+if (!state.journalVersion) { state.legacyDone = {...state.done}; state.journalVersion = 1; }
+function day() { return state.journal[selectedDate] || {entries:[],done:{}}; }
+function writableDay() { return state.journal[selectedDate] ||= {entries:[],done:{}}; }
+function save(){
+  try { localStorage.setItem("masseState",JSON.stringify(state)); return true; }
+  catch { alert("Impossible d’enregistrer sur cet appareil. Ne ferme pas la page : libère de l’espace ou vérifie le stockage du navigateur."); return false; }
+}
+function escapeText(value) { return String(value).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function entryMacros(e) { const factor=e.basis==="100" ? e.quantity/100 : e.quantity; return Object.fromEntries(Object.entries(e.values).map(([k,v])=>[k,v*factor])); }
+function dailyTotals() {
+  return [...meals.filter(m=>day().done[m.id]).map(m=>m.macros),...day().entries.map(entryMacros)]
+    .reduce((a,m)=>{for (const k of ["kcal","p","c","f"]) a[k]+=m[k];return a;},{kcal:0,p:0,c:0,f:0});
+}
+function updateQuantityLabel() { document.getElementById("quantityLabel").textContent=document.getElementById("foodBasis").value==="100" ? "Quantité mangée (g)" : "Nombre de pièces / portions"; }
+function resetFoodForm() {
+  editingId=null;document.getElementById("foodForm").reset();updateQuantityLabel();
+  document.getElementById("foodSubmit").textContent="Ajouter au journal";document.getElementById("cancelEdit").hidden=true;
+}
+function goToday() { changeDate(localDate()); }
+function changeDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
+  selectedDate=value;document.getElementById("journalDate").value=value;resetFoodForm();document.getElementById("foodFeedback").textContent="";renderMeals();renderJournal();
+}
+function renderJournal() {
+  const el=document.getElementById("journalEntries");
+  el.innerHTML=day().entries.length ? day().entries.map((e,i)=>{
+    const m=entryMacros(e);
+    return `<div class="meal"><div class="meal-time">${escapeText(e.meal)}</div><div class="meal-title">${escapeText(e.name)}</div><div class="ingredients">${e.quantity} ${e.basis==="100"?"g":"pièce(s) / portion(s)"} · ${escapeText(e.condition)}</div><div class="macro">${Math.round(m.kcal)} kcal · P ${m.p.toFixed(1)} g · G ${m.c.toFixed(1)} g · L ${m.f.toFixed(1)} g</div><div class="row" style="margin-top:8px"><button class="secondary" onclick="editEntry(${i})">Modifier</button><button class="danger" onclick="deleteEntry(${i})">Supprimer</button></div></div>`;
+  }).join("") : '<p class="note">Aucun aliment saisi pour cette date.</p>';
+}
+function editEntry(index) {
+  const e=day().entries[index]; if (!e) return;editingId=e.id;
+  for(const [id,v] of Object.entries({foodName:e.name,foodMeal:e.meal,foodBasis:e.basis,foodQuantity:e.quantity,foodCondition:e.condition,foodKcal:e.values.kcal,foodP:e.values.p,foodC:e.values.c,foodF:e.values.f})) document.getElementById(id).value=v;
+  updateQuantityLabel();document.getElementById("foodSubmit").textContent="Enregistrer la correction";document.getElementById("cancelEdit").hidden=false;document.getElementById("foodName").focus();
+}
+function deleteEntry(index) {
+  if (!confirm("Supprimer cet aliment du journal ?")) return;
+  writableDay().entries.splice(index,1);save();resetFoodForm();renderJournal();renderProgress();
+}
+function addFood(event) {
+  event.preventDefault();const form=document.getElementById("foodForm");if(!form.reportValidity())return;
+  const get=id=>document.getElementById(id).value;
+  const name=get("foodName").trim(),quantity=Number(get("foodQuantity"));
+  const values={kcal:Number(get("foodKcal")),p:Number(get("foodP")),c:Number(get("foodC")),f:Number(get("foodF"))};
+  if (!name || !Number.isFinite(quantity) || quantity<=0 || Object.values(values).some(v=>!Number.isFinite(v)||v<0)) return;
+  const e={id:editingId||crypto.randomUUID(),name,quantity,basis:get("foodBasis"),meal:get("foodMeal"),condition:get("foodCondition"),values};
+  const entries=writableDay().entries,index=entries.findIndex(x=>x.id===editingId);
+  if(index>=0)entries[index]=e;else entries.push(e);
+  const saved=save();resetFoodForm();renderJournal();renderProgress();document.getElementById("foodFeedback").textContent=saved ? "Enregistré pour le "+selectedDate+"." : "Non sauvegardé sur cet appareil.";
+}
 
 function renderMeals(){
   const el = document.getElementById("meals");
   el.innerHTML = meals.map(m=>{
-    const done = !!state.done[m.id];
+    const done = !!day().done[m.id];
     return `<div class="meal">
       <div class="row">
         <div><div class="meal-time">${m.time}</div><div class="meal-title">${m.name}</div></div>
@@ -236,18 +323,16 @@ function renderMeals(){
   renderProgress();
 }
 
-function toggleMeal(id){ state.done[id]=!state.done[id]; save(); renderMeals(); }
+function toggleMeal(id){ const d=writableDay();d.done[id]=!d.done[id]; save(); renderMeals(); }
 
 function renderProgress(){
-  const totals = meals.filter(m=>state.done[m.id]).reduce((a,m)=>({
-    kcal:a.kcal+m.macros.kcal,p:a.p+m.macros.p,c:a.c+m.macros.c,f:a.f+m.macros.f
-  }),{kcal:0,p:0,c:0,f:0});
+  const totals = dailyTotals();
   const kcalTarget = Number(state.settings.kcalTarget || 2800);
-  document.getElementById("kcalNow").textContent = totals.kcal;
+  document.getElementById("kcalNow").textContent = Math.round(totals.kcal);
   document.getElementById("kcalTargetText").textContent = kcalTarget;
   [["p","pBar","pText",targetMacros.p],["c","cBar","cText",targetMacros.c],["f","fBar","fText",targetMacros.f]].forEach(([k,bar,text,t])=>{
     document.getElementById(bar).style.width = Math.min(100,(totals[k]/t)*100)+"%";
-    document.getElementById(text).textContent = `${totals[k]} / ${t} g`;
+    document.getElementById(text).textContent = `${Math.round(totals[k])} / ${t} g`;
   });
 }
 
@@ -302,7 +387,7 @@ function resetShopping(){ state.shopping={}; save(); renderShopping(Number(local
 function saveWeight(){
   const v = Number(document.getElementById("weightInput").value);
   if(!v) return;
-  const date = new Date().toISOString().slice(0,10);
+  const date = localDate();
   const existing = state.weights.find(x=>x.date===date);
   if(existing) existing.value=v; else state.weights.push({date,value:v});
   state.weights.sort((a,b)=>a.date.localeCompare(b.date));
@@ -345,7 +430,7 @@ function saveSettings(){
 function renderAll(){
   document.getElementById("goalWeight").value = state.settings.goalWeight;
   document.getElementById("kcalTarget").value = state.settings.kcalTarget;
-  renderMeals(); renderPrep(); renderWeight();
+  renderMeals(); renderJournal(); renderPrep(); renderWeight();
 }
 
 document.querySelectorAll("nav button").forEach(btn=>{
@@ -368,6 +453,10 @@ if("serviceWorker" in navigator){
     }
   });
 }
+document.getElementById("journalDate").value=selectedDate;
+document.getElementById("journalDate").addEventListener("change",e=>changeDate(e.target.value));
+document.getElementById("foodBasis").addEventListener("change",updateQuantityLabel);
+document.getElementById("foodForm").addEventListener("submit",addFood);
 renderAll();
 </script>
 </body>
