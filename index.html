@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Masse" />
+  <title>Masse — Nutrition</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <style>
+    :root{
+      --bg:#0b1220; --card:#111827; --card2:#172033; --text:#f8fafc;
+      --muted:#94a3b8; --line:#243047; --accent:#38bdf8; --accent2:#22c55e;
+      --warn:#f59e0b; --danger:#ef4444;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      background:linear-gradient(180deg,#08111f 0%,#0b1220 100%); color:var(--text);
+      min-height:100vh; padding-bottom:calc(84px + env(safe-area-inset-bottom));
+    }
+    header{padding:calc(18px + env(safe-area-inset-top)) 18px 12px; position:sticky; top:0;
+      background:rgba(11,18,32,.92); backdrop-filter:blur(18px); z-index:5; border-bottom:1px solid var(--line)}
+    h1{font-size:24px;margin:0 0 4px}.sub{color:var(--muted);font-size:13px}
+    main{padding:14px;max-width:760px;margin:auto}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:12px}
+    .card h2{font-size:17px;margin:0 0 10px}.card h3{font-size:15px;margin:0 0 8px}
+    .metric{font-size:28px;font-weight:800}.muted{color:var(--muted)}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .meal{padding:12px 0;border-top:1px solid var(--line)}.meal:first-of-type{border-top:0}
+    .meal-title{font-weight:700}.meal-time{font-size:13px;color:var(--accent);font-weight:700}
+    .ingredients{margin-top:7px;color:#dbe4f0;font-size:13px;line-height:1.45}
+    .macro{font-size:12px;color:var(--muted);margin-top:5px}
+    input,select,button{font:inherit}
+    input,select{width:100%;background:#0d1627;color:var(--text);border:1px solid var(--line);border-radius:12px;padding:11px}
+    button{border:0;border-radius:12px;padding:11px 13px;font-weight:800;cursor:pointer}
+    .primary{background:var(--accent);color:#032133}.secondary{background:#1d2a3f;color:var(--text);border:1px solid var(--line)}
+    .done{background:#153522;color:#b9f7ca}.danger{background:#3b1518;color:#fecaca}
+    .progress{height:10px;background:#0d1627;border-radius:99px;overflow:hidden;margin:7px 0 3px}
+    .progress > div{height:100%;background:var(--accent);width:0}.progress.green > div{background:var(--accent2)}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0d1627;border:1px solid var(--line);font-size:12px;color:var(--muted)}
+    nav{position:fixed;bottom:0;left:0;right:0;padding:8px 10px calc(8px + env(safe-area-inset-bottom));
+      background:rgba(10,16,29,.96);backdrop-filter:blur(16px);border-top:1px solid var(--line);z-index:10}
+    nav .wrap{max-width:760px;margin:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+    nav button{background:transparent;color:var(--muted);font-size:12px;padding:8px 4px}
+    nav button.active{color:var(--text);background:#162238}
+    .screen{display:none}.screen.active{display:block}
+    .check{width:28px;height:28px;border-radius:9px;background:#0d1627;border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
+    .check.on{background:var(--accent2);color:#06210e;border-color:transparent}
+    .list{padding-left:18px;margin:8px 0}.list li{margin:6px 0}
+    .small{font-size:12px}.note{font-size:12px;color:var(--muted);line-height:1.45}
+    .split{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .shopping-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+    .shopping-item:first-child{border-top:0}.shopping-item input{width:20px;height:20px}
+    canvas{width:100%;height:180px;background:#0d1627;border-radius:12px}
+    @media (max-width:420px){.grid{grid-template-columns:1fr 1fr}.metric{font-size:24px}}
+  </style>
+</head>
+<body>
+<header>
+  <h1>Masse</h1>
+  <div class="sub">Prise de masse • repas • meal prep • poids</div>
+</header>
+
+<main>
+  <section id="today" class="screen active">
+    <div class="grid">
+      <div class="card">
+        <div class="muted small">Poids actuel</div>
+        <div class="metric"><span id="currentWeight">73.0</span> kg</div>
+        <div class="small muted">Objectif <span id="goalWeightText">80</span> kg</div>
+      </div>
+      <div class="card">
+        <div class="muted small">Calories</div>
+        <div class="metric"><span id="kcalNow">0</span></div>
+        <div class="small muted">/ <span id="kcalTargetText">2800</span> kcal</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Macros du jour</h2>
+      <div class="small">Protéines <span id="pText" class="muted"></span></div>
+      <div class="progress green"><div id="pBar"></div></div>
+      <div class="small">Glucides <span id="cText" class="muted"></span></div>
+      <div class="progress"><div id="cBar"></div></div>
+      <div class="small">Lipides <span id="fText" class="muted"></span></div>
+      <div class="progress"><div id="fBar"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="row"><h2>Repas</h2><span class="pill">Séance 20:00</span></div>
+      <div id="meals"></div>
+    </div>
+  </section>
+
+  <section id="prep" class="screen">
+    <div class="card">
+      <h2>Meal prep</h2>
+      <div class="split">
+        <div>
+          <label class="small muted">Nombre de jours</label>
+          <select id="prepDays">
+            <option value="1">1 jour</option>
+            <option value="2">2 jours</option>
+            <option value="3" selected>3 jours</option>
+            <option value="4">4 jours</option>
+            <option value="5">5 jours</option>
+            <option value="7">7 jours</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:end">
+          <button class="primary" style="width:100%" onclick="renderPrep()">Calculer</button>
+        </div>
+      </div>
+      <div id="prepOutput" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Organisation rapide</h2>
+      <ol class="list">
+        <li>Lance riz + pâtes en premier.</li>
+        <li>Cuisson poulet/dinde en grosse quantité.</li>
+        <li>Légumes surgelés ou déjà découpés.</li>
+        <li>Répartis déjeuner + pré‑workout dans les boîtes.</li>
+        <li>Le bœuf du soir peut être cuit frais en 5–10 min.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="shopping" class="screen">
+    <div class="card">
+      <div class="row"><h2>Liste de courses</h2><button class="secondary" onclick="resetShopping()">Réinitialiser</button></div>
+      <div id="shoppingList"></div>
+    </div>
+  </section>
+
+  <section id="weight" class="screen">
+    <div class="card">
+      <h2>Ajouter mon poids</h2>
+      <div class="split">
+        <input id="weightInput" type="number" step="0.1" min="40" max="200" placeholder="73.2" />
+        <button class="primary" onclick="saveWeight()">Enregistrer</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Suivi</h2>
+      <div class="grid">
+        <div><div class="muted small">Moyenne 7 jours</div><div class="metric" style="font-size:22px"><span id="avg7">—</span> kg</div></div>
+        <div><div class="muted small">Écart objectif</div><div class="metric" style="font-size:22px"><span id="remaining">7.0</span> kg</div></div>
+      </div>
+      <div id="weightAdvice" class="note" style="margin-top:10px"></div>
+      <div id="weightHistory" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Réglages</h2>
+      <div class="split">
+        <div>
+          <label class="small muted">Objectif poids</label>
+          <input id="goalWeight" type="number" step="0.1" value="80" />
+        </div>
+        <div>
+          <label class="small muted">Objectif kcal</label>
+          <input id="kcalTarget" type="number" step="50" value="2800" />
+        </div>
+      </div>
+      <button class="secondary" style="margin-top:10px;width:100%" onclick="saveSettings()">Sauvegarder les réglages</button>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <div class="wrap">
+    <button class="active" data-screen="today">Aujourd’hui</button>
+    <button data-screen="prep">Meal prep</button>
+    <button data-screen="shopping">Courses</button>
+    <button data-screen="weight">Poids</button>
+  </div>
+</nav>
+
+<script>
+const meals = [
+  {
+    id:"breakfast", time:"07:00", name:"Shaker",
+    items:["5 œufs","1 banane","250 ml lait demi-écrémé","1 orange","1 citron pressé","30 g miel"],
+    macros:{kcal:750,p:43,c:86,f:29}
+  },
+  {
+    id:"snack", time:"10:00", name:"Collation",
+    items:["150 g skyr","1 banane","10 g amandes"],
+    macros:{kcal:258,p:20,c:35,f:6}
+  },
+  {
+    id:"lunch", time:"13:00", name:"Déjeuner",
+    items:["120 g poulet/dinde","80 g pâtes complètes (sec)","200 g légumes","10 g huile d’olive","1 pomme"],
+    macros:{kcal:667,p:42,c:93,f:14}
+  },
+  {
+    id:"preworkout", time:"17:00", name:"Pré-entraînement",
+    items:["100 g poulet/dinde","70 g riz (cru/sec)","1 banane"],
+    macros:{kcal:467,p:29,c:83,f:2}
+  },
+  {
+    id:"dinner", time:"22:30", name:"Dîner post-entraînement",
+    items:["150 g bavette/rumsteck/filet","70 g riz ou pâtes (cru/sec)","200 g légumes","5 g huile d’olive"],
+    macros:{kcal:607,p:41,c:68,f:18}
+  }
+];
+
+const targetMacros = {p:170,c:360,f:70};
+let state = JSON.parse(localStorage.getItem("masseState") || "{}");
+state.done = state.done || {};
+state.weights = state.weights || [];
+state.shopping = state.shopping || {};
+state.settings = state.settings || {goalWeight:80,kcalTarget:2800};
+
+function save(){ localStorage.setItem("masseState",JSON.stringify(state)); }
+
+function renderMeals(){
+  const el = document.getElementById("meals");
+  el.innerHTML = meals.map(m=>{
+    const done = !!state.done[m.id];
+    return `<div class="meal">
+      <div class="row">
+        <div><div class="meal-time">${m.time}</div><div class="meal-title">${m.name}</div></div>
+        <button class="check ${done?"on":""}" onclick="toggleMeal('${m.id}')">${done?"✓":""}</button>
+      </div>
+      <div class="ingredients">${m.items.join(" • ")}</div>
+      <div class="macro">${m.macros.kcal} kcal · P ${m.macros.p} g · G ${m.macros.c} g · L ${m.macros.f} g</div>
+    </div>`;
+  }).join("");
+  renderProgress();
+}
+
+function toggleMeal(id){ state.done[id]=!state.done[id]; save(); renderMeals(); }
+
+function renderProgress(){
+  const totals = meals.filter(m=>state.done[m.id]).reduce((a,m)=>({
+    kcal:a.kcal+m.macros.kcal,p:a.p+m.macros.p,c:a.c+m.macros.c,f:a.f+m.macros.f
+  }),{kcal:0,p:0,c:0,f:0});
+  const kcalTarget = Number(state.settings.kcalTarget || 2800);
+  document.getElementById("kcalNow").textContent = totals.kcal;
+  document.getElementById("kcalTargetText").textContent = kcalTarget;
+  [["p","pBar","pText",targetMacros.p],["c","cBar","cText",targetMacros.c],["f","fBar","fText",targetMacros.f]].forEach(([k,bar,text,t])=>{
+    document.getElementById(bar).style.width = Math.min(100,(totals[k]/t)*100)+"%";
+    document.getElementById(text).textContent = `${totals[k]} / ${t} g`;
+  });
+}
+
+function renderPrep(){
+  const d = Number(document.getElementById("prepDays").value);
+  const totals = [
+    [`Poulet/dinde`, (120+100)*d, "g cru"],
+    [`Bœuf (bavette/rumsteck/filet)`, 150*d, "g cru"],
+    [`Pâtes complètes`, 80*d, "g sec"],
+    [`Riz`, 70*d, "g sec"],
+    [`Riz ou pâtes du dîner`, 70*d, "g sec"],
+    [`Légumes`, 400*d, "g"],
+    [`Huile d’olive`, 15*d, "g"],
+    [`Pommes`, 1*d, ""],
+    [`Bananes hors shaker`, 2*d, ""]
+  ];
+  document.getElementById("prepOutput").innerHTML =
+    `<h3>À préparer pour ${d} jour${d>1?"s":""}</h3>`+
+    totals.map(x=>`<div class="row" style="padding:6px 0"><span>${x[0]}</span><b>${x[1]} ${x[2]}</b></div>`).join("");
+  renderShopping(d);
+}
+
+function renderShopping(days=3){
+  const items = [
+    ["Œufs",5*days,""],
+    ["Bananes",3*days,""],
+    ["Lait demi-écrémé",250*days,"ml"],
+    ["Oranges",days,""],
+    ["Citrons",days,""],
+    ["Miel",30*days,"g"],
+    ["Skyr",150*days,"g"],
+    ["Amandes",10*days,"g"],
+    ["Poulet/dinde",220*days,"g"],
+    ["Bœuf",150*days,"g"],
+    ["Pâtes complètes",80*days,"g sec"],
+    ["Riz",140*days,"g sec"],
+    ["Légumes",400*days,"g"],
+    ["Huile d’olive",15*days,"g"],
+    ["Pommes",days,""]
+  ];
+  localStorage.setItem("masseShoppingDays",String(days));
+  document.getElementById("shoppingList").innerHTML = items.map((it,i)=>{
+    const key = it[0];
+    const checked = !!state.shopping[key];
+    return `<label class="shopping-item"><input type="checkbox" ${checked?"checked":""} onchange="toggleShopping('${key}',this.checked)">
+      <span style="flex:1">${it[0]}</span><b>${it[1]} ${it[2]}</b></label>`;
+  }).join("");
+}
+function toggleShopping(k,v){ state.shopping[k]=v; save(); }
+function resetShopping(){ state.shopping={}; save(); renderShopping(Number(localStorage.getItem("masseShoppingDays")||3)); }
+
+function saveWeight(){
+  const v = Number(document.getElementById("weightInput").value);
+  if(!v) return;
+  const date = new Date().toISOString().slice(0,10);
+  const existing = state.weights.find(x=>x.date===date);
+  if(existing) existing.value=v; else state.weights.push({date,value:v});
+  state.weights.sort((a,b)=>a.date.localeCompare(b.date));
+  save(); document.getElementById("weightInput").value=""; renderWeight();
+}
+
+function renderWeight(){
+  const history = state.weights.slice(-14);
+  const current = history.length ? history[history.length-1].value : 73.0;
+  const last7 = history.slice(-7);
+  const avg = last7.length ? (last7.reduce((s,x)=>s+x.value,0)/last7.length) : null;
+  const goal = Number(state.settings.goalWeight||80);
+  document.getElementById("currentWeight").textContent = current.toFixed(1);
+  document.getElementById("goalWeightText").textContent = goal;
+  document.getElementById("avg7").textContent = avg ? avg.toFixed(1) : "—";
+  document.getElementById("remaining").textContent = Math.max(0,goal-current).toFixed(1);
+  document.getElementById("weightHistory").innerHTML = history.length ?
+    history.slice().reverse().map(x=>`<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><span>${x.date}</span><b>${x.value.toFixed(1)} kg</b></div>`).join("")
+    : `<div class="note">Ajoute ton poids chaque matin à jeun. L’app garde les données uniquement sur ton iPhone.</div>`;
+  let advice = "Vise environ +0,2 à +0,3 kg/semaine et juge la tendance sur plusieurs pesées.";
+  if(history.length >= 8){
+    const a = history.slice(-14,-7), b = history.slice(-7);
+    if(a.length && b.length){
+      const avga=a.reduce((s,x)=>s+x.value,0)/a.length, avgb=b.reduce((s,x)=>s+x.value,0)/b.length;
+      const diff=avgb-avga;
+      if(diff < 0.1) advice = "Progression faible sur les moyennes récentes : garde le plan encore quelques jours puis envisage +150 kcal/j si la tendance reste plate.";
+      else if(diff > 0.5) advice = "Progression rapide : surveille encore quelques jours. Si ça reste > +0,5 kg/semaine, baisse légèrement les calories.";
+      else advice = `Progression récente ≈ +${diff.toFixed(2)} kg/semaine : zone cohérente pour une prise de masse contrôlée.`;
+    }
+  }
+  document.getElementById("weightAdvice").textContent = advice;
+}
+
+function saveSettings(){
+  state.settings.goalWeight = Number(document.getElementById("goalWeight").value)||80;
+  state.settings.kcalTarget = Number(document.getElementById("kcalTarget").value)||2800;
+  save(); renderAll();
+}
+
+function renderAll(){
+  document.getElementById("goalWeight").value = state.settings.goalWeight;
+  document.getElementById("kcalTarget").value = state.settings.kcalTarget;
+  renderMeals(); renderPrep(); renderWeight();
+}
+
+document.querySelectorAll("nav button").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll("nav button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+    document.getElementById(btn.dataset.screen).classList.add("active");
+  });
+});
+
+if("serviceWorker" in navigator){
+  window.addEventListener("load", async () => {
+    try {
+      const reg = await navigator.serviceWorker.register("./sw.js", {updateViaCache:"none"});
+      await reg.update();
+      setInterval(() => reg.update(), 60 * 1000);
+    } catch (e) {
+      console.warn("Service worker non disponible", e);
+    }
+  });
+}
+renderAll();
+</script>
+</body>
+</html>
