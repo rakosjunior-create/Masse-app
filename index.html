@@ -75,7 +75,7 @@
     <div class="grid">
       <div class="card">
         <div class="muted small">Poids actuel</div>
-        <div class="metric"><span id="currentWeight">73.0</span> kg</div>
+        <div class="metric"><span id="currentWeight">71.0</span> kg</div>
         <div class="small muted">Objectif <span id="goalWeightText">80</span> kg</div>
       </div>
       <div class="card">
@@ -170,9 +170,9 @@
 
   <section id="weight" class="screen">
     <div class="card">
-      <h2>Ajouter mon poids</h2>
+      <h2>Ajouter mon poids à jeun</h2>
       <div class="split">
-        <input id="weightInput" type="number" step="0.1" min="40" max="200" placeholder="73.2" />
+        <input id="weightInput" type="number" step="0.1" min="40" max="200" placeholder="71.0" />
         <button class="primary" onclick="saveWeight()">Enregistrer</button>
       </div>
     </div>
@@ -181,7 +181,7 @@
       <h2>Suivi</h2>
       <div class="grid">
         <div><div class="muted small">Moyenne 7 jours</div><div class="metric" style="font-size:22px"><span id="avg7">—</span> kg</div></div>
-        <div><div class="muted small">Écart objectif</div><div class="metric" style="font-size:22px"><span id="remaining">7.0</span> kg</div></div>
+        <div><div class="muted small">Écart objectif</div><div class="metric" style="font-size:22px"><span id="remaining">9.0</span> kg</div></div>
       </div>
       <div id="weightAdvice" class="note" style="margin-top:10px"></div>
       <div id="weightHistory" style="margin-top:12px"></div>
@@ -396,7 +396,7 @@ function saveWeight(){
 
 function renderWeight(){
   const history = state.weights.slice(-14);
-  const current = history.length ? history[history.length-1].value : 73.0;
+  const current = history.length ? history[history.length-1].value : 71.0;
   const last7 = history.slice(-7);
   const avg = last7.length ? (last7.reduce((s,x)=>s+x.value,0)/last7.length) : null;
   const goal = Number(state.settings.goalWeight||80);
