@@ -96,8 +96,21 @@
     </div>
 
     <div class="card">
+      <h2>Repères pour 100 g de viande crue</h2>
+      <p class="note">Viande pesée avant cuisson, sans huile ni sauce. La viande rouge varie selon le morceau : ici, le repère est la bavette d’aloyau.</p>
+      <div style="overflow-x:auto"><table style="width:100%;font-size:13px;text-align:left;border-spacing:8px">
+        <thead><tr><th>Aliment</th><th>kcal</th><th>Protéines</th><th>Lipides</th><th>Glucides</th></tr></thead>
+        <tbody><tr><th>Bavette d’aloyau</th><td>133</td><td>20,4 g</td><td>5,67 g</td><td>0 g</td></tr>
+        <tr><th>Filet de poulet sans peau</th><td>110</td><td>23,4 g</td><td>1,5 g</td><td>0 g</td></tr></tbody>
+      </table></div>
+      <p class="note">Valeurs moyennes, à remplacer par celles de ton emballage si disponibles. Pour une pesée après cuisson, utilise des valeurs pour viande cuite : 100 g crus et 100 g cuits ne sont pas équivalents. Compte l’huile et les sauces séparément.</p>
+      <details class="note"><summary>Sources des repères</summary><p>Données Ciqual (Anses), consultées via Mes Infos Nutrition : <a style="color:var(--accent)" href="https://www.mes-infos-nutrition.com/aliments-viandes_oeufs_poissons_et_assimiles/viandes_crues/boeuf_et_veau/boeuf_bavette_daloyau_crue" target="_blank" rel="noopener">bavette</a> et <a style="color:var(--accent)" href="https://www.mes-infos-nutrition.com/aliments-viandes_oeufs_poissons_et_assimiles/viandes_crues/poulet_filet_sans_peau_cru" target="_blank" rel="noopener">poulet</a>.</p></details>
+    </div>
+    <div class="card">
       <h2>Ajouter un aliment</h2>
       <form id="foodForm">
+        <label for="foodPreset">Remplissage rapide</label>
+        <select id="foodPreset" onchange="applyFoodPreset()" style="margin-bottom:12px"><option value="">Saisie libre</option value="beef">Bavette d’aloyau — crue</option><option value="chicken">Filet de poulet sans peau — cru</option></select>
         <label for="foodName">Aliment ou plat</label>
         <input id="foodName" required maxlength="120" placeholder="Ex. pâtes complètes, bavette, œufs durs">
         <div class="split" style="margin-top:10px">
@@ -115,6 +128,7 @@
           <div><label for="foodC">Glucides (g)</label><input id="foodC" type="number" min="0" max="1000" step="any" required inputmode="decimal"></div>
           <div><label for="foodF">Lipides (g)</label><input id="foodF" type="number" min="0" max="1000" step="any" required inputmode="decimal"></div>
         </div>
+        <p id="foodPreview" class="note" aria-live="polite"></p>
         <div class="row" style="margin-top:12px"><button id="foodSubmit" class="primary" type="submit">Ajouter au journal</button><button id="cancelEdit" class="secondary" type="button" hidden onclick="resetFoodForm()">Annuler</button></div>
         <p id="foodFeedback" class="note" role="status" aria-live="polite"></p>
       </form>
@@ -242,6 +256,40 @@ const meals = [
   }
 ];
 
+
+const foodPresets = {
+  beef:{name:"Bavette d’aloyau",values:{kcal:133,p:20.4,c:0,f:5.67}},
+  chicken:{name:"Filet de poulet sans peau",values:{kcal:110,p:23.4,c:0,f:1.5}}
+};
+function applyFoodPreset() {
+  const preset=foodPresets[document.getElementById("foodPreset").value];
+  if(!preset) return;
+  document.getElementById("foodName").value=preset.name;
+  document.getElementById("foodBasis").value="100";
+  document.getElementById("foodCondition").value="Cru / sec";
+  document.getElementById("foodQuantity").value="100";
+  for(const [id,k] of [["foodKcal","kcal"],["foodP","p"],["foodC","c"],["foodF","f"]]) document.getElementById(id).value=preset.values[k];
+  updateQuantityLabel();renderFoodPreview();
+}
+function renderFoodPreview() {
+  const ids=["foodQuantity","foodKcal","foodP","foodC","foodF"];
+  const raw=ids.map(id=>document.getElementById(id).value);
+  const values=raw.map(Number),[quantity,kcal,p,c,f]=values;
+  const el=document.getElementById("foodPreview");
+  if(raw.some(v=>v==="") || values.some(v=>!Number.isFinite(v)||v<0) || quantity<=0) {el.textContent="";return;}
+  const factor=document.getElementById("foodBasis").value==="100"?quantity/100:quantity;
+  const fmt=n=>(n*factor).toLocaleString("fr-FR",{maximumFractionDigits:1});
+  el.textContent=`Pour ta quantité : ${fmt(kcal)} kcal · Protéines ${fmt(p)} g · Lipides ${fmt(f)} g · Glucides ${fmt(c)} g`;
+}
+function checkPresetCondition() {
+  if(document.getElementById("foodPreset").value && document.getElementById("foodCondition").value!=="Cru / sec") {
+    document.getElementById("foodPreset").value="";
+    for(const id of ["foodKcal","foodP","foodC","foodF"]) document.getElementById(id).value="";
+    document.getElementById("foodFeedback").textContent="Renseigne les valeurs correspondant à la viande cuite avant d’enregistrer.";
+  }
+  renderFoodPreview();
+}
+
 const targetMacros = {p:170,c:360,f:70};
 let state;
 try { state = JSON.parse(localStorage.getItem("masseState") || "{}"); } catch { state = {}; }
@@ -271,7 +319,7 @@ function dailyTotals() {
 }
 function updateQuantityLabel() { document.getElementById("quantityLabel").textContent=document.getElementById("foodBasis").value==="100" ? "Quantité mangée (g)" : "Nombre de pièces / portions"; }
 function resetFoodForm() {
-  editingId=null;document.getElementById("foodForm").reset();updateQuantityLabel();
+  editingId=null;document.getElementById("foodForm").reset();updateQuantityLabel();renderFoodPreview();
   document.getElementById("foodSubmit").textContent="Ajouter au journal";document.getElementById("cancelEdit").hidden=true;
 }
 function goToday() { changeDate(localDate()); }
@@ -287,9 +335,9 @@ function renderJournal() {
   }).join("") : '<p class="note">Aucun aliment saisi pour cette date.</p>';
 }
 function editEntry(index) {
-  const e=day().entries[index]; if (!e) return;editingId=e.id;
+  const e=day().entries[index]; if (!e) return;editingId=e.id;document.getElementById("foodPreset").value="";
   for(const [id,v] of Object.entries({foodName:e.name,foodMeal:e.meal,foodBasis:e.basis,foodQuantity:e.quantity,foodCondition:e.condition,foodKcal:e.values.kcal,foodP:e.values.p,foodC:e.values.c,foodF:e.values.f})) document.getElementById(id).value=v;
-  updateQuantityLabel();document.getElementById("foodSubmit").textContent="Enregistrer la correction";document.getElementById("cancelEdit").hidden=false;document.getElementById("foodName").focus();
+  updateQuantityLabel();renderFoodPreview();document.getElementById("foodSubmit").textContent="Enregistrer la correction";document.getElementById("cancelEdit").hidden=false;document.getElementById("foodName").focus();
 }
 function deleteEntry(index) {
   if (!confirm("Supprimer cet aliment du journal ?")) return;
@@ -457,6 +505,9 @@ document.getElementById("journalDate").value=selectedDate;
 document.getElementById("journalDate").addEventListener("change",e=>changeDate(e.target.value));
 document.getElementById("foodBasis").addEventListener("change",updateQuantityLabel);
 document.getElementById("foodForm").addEventListener("submit",addFood);
+document.getElementById("foodForm").addEventListener("input",renderFoodPreview);
+document.getElementById("foodForm").addEventListener("change",renderFoodPreview);
+document.getElementById("foodCondition").addEventListener("change",checkPresetCondition);
 renderAll();
 </script>
 </body>
