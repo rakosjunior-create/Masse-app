@@ -72,6 +72,10 @@
     .nutrition-actions{display:flex;gap:6px;margin-top:8px}
     .nutrition-actions button{padding:7px 9px;font-size:11px}
     .nutrition-total{border:1px solid #4c9f35;border-radius:12px;overflow:hidden;margin-top:18px}
+    .quick-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+    .quick-grid button{min-height:44px}.remaining-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .remaining-grid strong{display:block;font-size:23px;margin-top:4px}.weight-svg{width:100%;height:auto;display:block}
+    input,select{min-width:0}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   </style>
 </head>
 <body>
@@ -110,6 +114,14 @@
       <div class="progress"><div id="fBar"></div></div>
     </div>
 
+    <div class="card"><h2>Reste pour cette journée</h2><div id="dailyRemaining" class="remaining-grid"></div><p class="note">Par rapport à tes objectifs personnels, modifiables dans Poids → Réglages. Un objectif dépassé n’est pas une consigne de compensation.</p></div>
+    <div class="card"><h2>Mes repas enregistrés</h2><p class="note">Ajoute un repas habituel à la date sélectionnée. Les quantités restent modifiables ensuite.</p>
+      <label for="savedMealSelect">Recette / repas</label><select id="savedMealSelect"></select>
+      <div class="split" style="margin-top:10px"><div><label for="savedMealTarget">Pour quel repas ?</label><select id="savedMealTarget"><option>Petit-déjeuner</option><option>Déjeuner</option><option>Dîner</option><option>Collation</option></select></div><div><label for="savedMealFactor">Nombre de portions</label><input id="savedMealFactor" type="number" min="0.1" max="20" step="0.1" value="1" inputmode="decimal"></div></div>
+      <div class="quick-grid" style="margin-top:10px"><button class="primary" onclick="addSavedMeal()">Ajouter le repas</button><button class="secondary" onclick="deleteSavedMeal()">Supprimer ce modèle</button></div>
+      <details style="margin-top:14px"><summary>Copier une autre journée</summary><label for="copyDate">Journée à copier</label><input id="copyDate" type="date"><button class="secondary" style="margin-top:8px" onclick="copyDay()">Copier vers la date sélectionnée</button></details>
+      <p id="quickFeedback" class="note" role="status"></p>
+    </div>
     <div class="card"><h2>Ma journée, repas par repas</h2><p class="note">Apports calculés pour les quantités mangées. Fais glisser les tableaux horizontalement pour voir toutes les colonnes.</p><div id="journalEntries"></div></div>
     <div class="card">
       <h2>Repères pour 100 g de viande crue</h2>
@@ -125,7 +137,9 @@
     <div class="card">
       <h2>Ajouter un aliment</h2>
       <form id="foodForm">
-        <label for="foodPreset">Remplissage rapide</label>
+        <label for="favoriteSelect">Mes aliments favoris</label><div class="split"><select id="favoriteSelect"></select><button type="button" class="secondary" onclick="useFavorite()">Utiliser</button></div>
+        <button type="button" class="secondary small" style="margin:8px 0 12px" onclick="deleteFavorite()">Supprimer ce favori</button>
+        <label for="foodPreset">Aliments disponibles</label>
         <select id="foodPreset" onchange="applyFoodPreset()" style="margin-bottom:12px"><option value="">Saisie libre</option value="beef">Bavette d’aloyau — crue</option><option value="chicken">Filet de poulet sans peau — cru</option></select>
         <label for="foodName">Aliment ou plat</label>
         <input id="foodName" required maxlength="120" placeholder="Ex. pâtes complètes, bavette, œufs durs">
@@ -144,6 +158,7 @@
           <div><label for="foodC">Glucides (g)</label><input id="foodC" type="number" min="0" max="1000" step="any" required inputmode="decimal"></div>
           <div><label for="foodF">Lipides (g)</label><input id="foodF" type="number" min="0" max="1000" step="any" required inputmode="decimal"></div>
         </div>
+        <button type="button" class="secondary" style="margin-top:10px" onclick="saveFavorite()">★ Enregistrer cet aliment en favori</button>
         <p id="foodPreview" class="note" aria-live="polite"></p>
         <div class="row" style="margin-top:12px"><button id="foodSubmit" class="primary" type="submit">Ajouter au journal</button><button id="cancelEdit" class="secondary" type="button" hidden onclick="resetFoodForm()">Annuler</button></div>
         <p id="foodFeedback" class="note" role="status" aria-live="polite"></p>
@@ -200,7 +215,7 @@
 
   <section id="weight" class="screen">
     <div class="card">
-      <h2>Ajouter mon poids à jeun</h2>
+      <h2>Ajouter mon poids à jeun</h2><label for="weightDate">Date de la pesée</label><input id="weightDate" type="date" style="margin-bottom:10px">
       <div class="split">
         <input id="weightInput" type="number" step="0.1" min="40" max="200" placeholder="71.0" />
         <button class="primary" onclick="saveWeight()">Enregistrer</button>
@@ -208,7 +223,7 @@
     </div>
 
     <div class="card">
-      <h2>Suivi</h2>
+      <h2>Suivi</h2><div id="weightChart"></div>
       <div class="grid">
         <div><div class="muted small">Moyenne 7 jours</div><div class="metric" style="font-size:22px"><span id="avg7">—</span> kg</div></div>
         <div><div class="muted small">Écart objectif</div><div class="metric" style="font-size:22px"><span id="remaining">9.0</span> kg</div></div>
@@ -229,8 +244,10 @@
           <input id="kcalTarget" type="number" step="50" value="2800" />
         </div>
       </div>
+      <div class="split" style="margin-top:10px"><div><label for="proteinTarget">Protéines (g/j)</label><input id="proteinTarget" type="number" min="1" max="1000" step="1"></div><div><label for="carbTarget">Glucides (g/j)</label><input id="carbTarget" type="number" min="1" max="2000" step="1"></div><div><label for="fatTarget">Lipides (g/j)</label><input id="fatTarget" type="number" min="1" max="1000" step="1"></div></div>
       <button class="secondary" style="margin-top:10px;width:100%" onclick="saveSettings()">Sauvegarder les réglages</button>
     </div>
+    <div class="card"><h2>Sauvegarde de mes données</h2><p class="note">Télécharge une copie de tes journées, pesées, favoris, repas et réglages. Garde ce fichier dans Fichiers ou iCloud Drive pour le restaurer sur un autre appareil.</p><button class="primary" onclick="exportBackup()">Exporter ma sauvegarde</button><label for="backupInput" style="display:block;margin-top:14px">Restaurer une sauvegarde</label><input id="backupInput" type="file" accept=".json,application/json" onchange="importBackup(this)"><p class="note">La restauration remplace les données de cet appareil après confirmation. Exporte d’abord les données actuelles si tu veux les garder.</p><p id="backupFeedback" role="status" class="note"></p></div>
   </section>
 
   <section id="equivalences" class="screen">
@@ -241,11 +258,11 @@
       <select id="eqMacro" onchange="initEquivalences()"><option value="p">Protéines</option><option value="c">Glucides</option><option value="f">Lipides</option></select>
       <label for="eqFood">Aliment de départ</label><select id="eqFood" onchange="renderEquivalences()"></select>
       <label for="eqQuantity">Quantité de départ (g)</label><input id="eqQuantity" type="number" min="0.1" max="10000" step="any" value="100" inputmode="decimal" oninput="renderEquivalences()">
-      <p class="note">Respecte l’état indiqué : cru, cuit ou prêt à consommer. Pour les œufs, le poids est sans coquille. Les féculents proposés ici sont pesés cuits.</p>
+      <p class="note">Respecte l’état indiqué : cru, cuit ou prêt à consommer. Pour les œufs, le poids est sans coquille. Les féculents existent en versions crues ou cuites : suis le libellé, sans convertir leur poids au hasard.</p>
       <div id="eqSummary" role="status" class="ingredients"></div>
     </div>
     <div class="card"><h2>Par quoi remplacer ?</h2><p class="note">≈ Même quantité du nutriment choisi, mais calories et autres nutriments différents. Les portions sont arrondies à 0,1 g. « Préparer la saisie » remplit le formulaire ; rien n’est ajouté au journal avant ta validation.</p><div id="eqResults"></div></div>
-    <div class="card"><details><summary>Valeurs et sources</summary>
+    <div class="card"><details><summary>Valeurs et sources</summary><p class="note"><a style="color:var(--accent)" href="https://datafood.ch/fr/aliment/pates-alimentaires-au-ble-complet-seches/" target="_blank" rel="noopener">Pâtes complètes sèches : OSAV via Datafood</a>. Les traces de lipides de la banane sont arrondies à zéro.</p>
       <p class="note">Repères moyens pour 100 g, sans huile ni sauce ajoutée. Priorité aux valeurs de ton emballage lorsqu’elles sont disponibles. Les traces de protéines de l’huile d’olive sont arrondies à zéro.</p>
       <p class="note"><a style="color:var(--accent)" href="https://www.afdn.org/sites/www.afdn.org/files/medias/documents/table%20de%20composition%20Ciqual%202020%20version%20finale%20_.pdf" target="_blank" rel="noopener">Table Ciqual 2020 diffusée par l’AFDN</a>. Pour le poulet cru et la bavette crue : fiches Ciqual reprises par Mes Infos Nutrition (liens dans les repères pour 100 g). <a style="color:var(--accent)" href="https://www.mes-infos-nutrition.com/aliments-matieres_grasses/huiles_et_graisses_vegetales/huile_dolive_vierge_extra" target="_blank" rel="noopener">Huile d’olive</a>. <a style="color:var(--accent)" href="https://www.santemagazine.fr/alimentation/nutriments/guide-des-calories/matieres-grasses-ajoutees/huile-de-lin-918023" target="_blank" rel="noopener">Huile de lin : Ciqual via Santé Magazine</a>.</p>
     </details></div>
@@ -298,13 +315,12 @@ const foodPresets = {
   chicken:{name:"Filet de poulet sans peau",values:{kcal:110,p:23.4,c:0,f:1.5}}
 };
 function applyFoodPreset() {
-  const preset=foodPresets[document.getElementById("foodPreset").value];
-  if(!preset) return;
-  document.getElementById("foodName").value=preset.name;
-  document.getElementById("foodBasis").value="100";
-  document.getElementById("foodCondition").value="Cru / sec";
-  document.getElementById("foodQuantity").value="100";
-  for(const [id,k] of [["foodKcal","kcal"],["foodP","p"],["foodC","c"],["foodF","f"]]) document.getElementById(id).value=preset.values[k];
+  const id=document.getElementById("foodPreset").value;
+  const food=equivalenceFoods.find(f=>f.id===id);if(!food)return;
+  fillFoodForm(food,100);
+}
+function fillFoodForm(food,quantity) {
+  for(const [id,v] of Object.entries({foodName:food.name,foodBasis:food.basis||"100",foodCondition:food.condition,foodQuantity:quantity,foodKcal:food.values.kcal,foodP:food.values.p,foodC:food.values.c,foodF:food.values.f}))document.getElementById(id).value=v;
   updateQuantityLabel();renderFoodPreview();
 }
 function renderFoodPreview() {
@@ -318,16 +334,16 @@ function renderFoodPreview() {
   el.textContent=`Pour ta quantité : ${fmt(kcal)} kcal · Protéines ${fmt(p)} g · Lipides ${fmt(f)} g · Glucides ${fmt(c)} g`;
 }
 function checkPresetCondition() {
-  if(document.getElementById("foodPreset").value && document.getElementById("foodCondition").value!=="Cru / sec") {
+  if(document.getElementById("foodPreset").value && document.getElementById("foodCondition").value!==equivalenceFoods.find(f=>f.id===document.getElementById("foodPreset").value)?.condition) {
     document.getElementById("foodPreset").value="";
     for(const id of ["foodKcal","foodP","foodC","foodF"]) document.getElementById(id).value="";
-    document.getElementById("foodFeedback").textContent="Renseigne les valeurs correspondant à la viande cuite avant d’enregistrer.";
+    document.getElementById("foodFeedback").textContent="L’état pesé a changé : renseigne les valeurs correspondant à ce nouvel état avant d’enregistrer.";
   }
   renderFoodPreview();
 }
 
 
-const equivalenceFoods=[{"id":"chicken","name":"Filet de poulet sans peau","condition":"Cru / sec","group":"p","values":{"kcal":110,"p":23.4,"c":0,"f":1.5}},{"id":"beef","name":"Bavette d’aloyau","condition":"Cru / sec","group":"p","values":{"kcal":133,"p":20.4,"c":0,"f":5.67}},{"id":"chickencooked","name":"Filet de poulet sans peau, poêlé","condition":"Cuit","group":"p","values":{"kcal":138,"p":30.1,"c":0,"f":2}},{"id":"mince","name":"Steak haché 5 % MG, cuit","condition":"Cuit","group":"p","values":{"kcal":155,"p":25.5,"c":0,"f":5.9}},{"id":"turkey","name":"Dinde, viande rôtie","condition":"Cuit","group":"p","values":{"kcal":151,"p":29.1,"c":0,"f":3.8}},{"id":"cod","name":"Cabillaud, au four","condition":"Cuit","group":"p","values":{"kcal":95,"p":22.3,"c":0,"f":0.6}},{"id":"tuna","name":"Thon au naturel, égoutté","condition":"Prêt à consommer","group":"p","values":{"kcal":111,"p":26.8,"c":0,"f":0.4}},{"id":"salmon","name":"Saumon, vapeur","condition":"Cuit","group":"p","values":{"kcal":196,"p":23,"c":0,"f":11.5}},{"id":"egg","name":"Œuf dur, sans coquille","condition":"Cuit","group":"p","values":{"kcal":134,"p":13.5,"c":0.5,"f":8.6}},{"id":"rice","name":"Riz blanc, cuit non salé","condition":"Cuit","group":"c","values":{"kcal":143,"p":2.9,"c":31.8,"f":0.4}},{"id":"brownrice","name":"Riz complet, cuit non salé","condition":"Cuit","group":"c","values":{"kcal":152,"p":3.2,"c":32.6,"f":1}},{"id":"pasta","name":"Pâtes standard, cuites non salées","condition":"Cuit","group":"c","values":{"kcal":121,"p":4,"c":25,"f":0.6}},{"id":"wholepasta","name":"Pâtes complètes, cuites non salées","condition":"Cuit","group":"c","values":{"kcal":120,"p":4.6,"c":23.4,"f":0.9}},{"id":"potato","name":"Pomme de terre, à l’eau","condition":"Cuit","group":"c","values":{"kcal":77,"p":1.8,"c":16.7,"f":0.3}},{"id":"sweetpotato","name":"Patate douce, cuite","condition":"Cuit","group":"c","values":{"kcal":57,"p":1.7,"c":12.2,"f":0.2}},{"id":"quinoa","name":"Quinoa, cuit non salé","condition":"Cuit","group":"c","values":{"kcal":140,"p":4.7,"c":27.9,"f":1.1}},{"id":"bread","name":"Pain complet T150","condition":"Prêt à consommer","group":"c","values":{"kcal":227,"p":8.4,"c":44.3,"f":1.8}},{"id":"olive","name":"Huile d’olive","condition":"Prêt à consommer","group":"f","values":{"kcal":900,"p":0,"c":0,"f":99.9}},{"id":"almond","name":"Amandes avec peau","condition":"Prêt à consommer","group":"f","values":{"kcal":575,"p":18.8,"c":9.5,"f":51.3}},{"id":"walnut","name":"Cerneaux de noix","condition":"Prêt à consommer","group":"f","values":{"kcal":686,"p":13.3,"c":6.9,"f":67.3}},{"id":"lin","name":"Huile de lin","condition":"Prêt à consommer","group":"f","values":{"kcal":900,"p":0,"c":0,"f":100}}];
+const equivalenceFoods=[{"id": "chicken", "name": "Filet de poulet sans peau", "condition": "Cru / sec", "group": "p", "values": {"kcal": 110, "p": 23.4, "c": 0, "f": 1.5}}, {"id": "beef", "name": "Bavette d’aloyau", "condition": "Cru / sec", "group": "p", "values": {"kcal": 133, "p": 20.4, "c": 0, "f": 5.67}}, {"id": "chickencooked", "name": "Filet de poulet sans peau, poêlé", "condition": "Cuit", "group": "p", "values": {"kcal": 138, "p": 30.1, "c": 0, "f": 2}}, {"id": "mince", "name": "Steak haché 5 % MG, cuit", "condition": "Cuit", "group": "p", "values": {"kcal": 155, "p": 25.5, "c": 0, "f": 5.9}}, {"id": "turkey", "name": "Dinde, viande rôtie", "condition": "Cuit", "group": "p", "values": {"kcal": 151, "p": 29.1, "c": 0, "f": 3.8}}, {"id": "cod", "name": "Cabillaud, au four", "condition": "Cuit", "group": "p", "values": {"kcal": 95, "p": 22.3, "c": 0, "f": 0.6}}, {"id": "tuna", "name": "Thon au naturel, égoutté", "condition": "Prêt à consommer", "group": "p", "values": {"kcal": 111, "p": 26.8, "c": 0, "f": 0.4}}, {"id": "salmon", "name": "Saumon, vapeur", "condition": "Cuit", "group": "p", "values": {"kcal": 196, "p": 23, "c": 0, "f": 11.5}}, {"id": "egg", "name": "Œuf dur, sans coquille", "condition": "Cuit", "group": "p", "values": {"kcal": 134, "p": 13.5, "c": 0.5, "f": 8.6}}, {"id": "rice", "name": "Riz blanc, cuit non salé", "condition": "Cuit", "group": "c", "values": {"kcal": 143, "p": 2.9, "c": 31.8, "f": 0.4}}, {"id": "brownrice", "name": "Riz complet, cuit non salé", "condition": "Cuit", "group": "c", "values": {"kcal": 152, "p": 3.2, "c": 32.6, "f": 1}}, {"id": "pasta", "name": "Pâtes standard, cuites non salées", "condition": "Cuit", "group": "c", "values": {"kcal": 121, "p": 4, "c": 25, "f": 0.6}}, {"id": "wholepasta", "name": "Pâtes complètes, cuites non salées", "condition": "Cuit", "group": "c", "values": {"kcal": 120, "p": 4.6, "c": 23.4, "f": 0.9}}, {"id": "potato", "name": "Pomme de terre, à l’eau", "condition": "Cuit", "group": "c", "values": {"kcal": 77, "p": 1.8, "c": 16.7, "f": 0.3}}, {"id": "sweetpotato", "name": "Patate douce, cuite", "condition": "Cuit", "group": "c", "values": {"kcal": 57, "p": 1.7, "c": 12.2, "f": 0.2}}, {"id": "quinoa", "name": "Quinoa, cuit non salé", "condition": "Cuit", "group": "c", "values": {"kcal": 140, "p": 4.7, "c": 27.9, "f": 1.1}}, {"id": "bread", "name": "Pain complet T150", "condition": "Prêt à consommer", "group": "c", "values": {"kcal": 227, "p": 8.4, "c": 44.3, "f": 1.8}}, {"id": "olive", "name": "Huile d’olive", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 900, "p": 0, "c": 0, "f": 99.9}}, {"id": "almond", "name": "Amandes avec peau", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 575, "p": 18.8, "c": 9.5, "f": 51.3}}, {"id": "walnut", "name": "Cerneaux de noix", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 686, "p": 13.3, "c": 6.9, "f": 67.3}}, {"id": "lin", "name": "Huile de lin", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 900, "p": 0, "c": 0, "f": 100}}, {"id": "wholepastadry", "name": "Pâtes complètes, sèches", "condition": "Cru / sec", "group": "c", "values": {"kcal": 338, "p": 12.6, "c": 60.6, "f": 2.5}}, {"id": "ricedry", "name": "Riz blanc, cru", "condition": "Cru / sec", "group": "c", "values": {"kcal": 348, "p": 7, "c": 78, "f": 0.9}}, {"id": "banana", "name": "Banane, sans peau", "condition": "Prêt à consommer", "group": "c", "values": {"kcal": 83, "p": 1.1, "c": 19.7, "f": 0}}, {"id": "apple", "name": "Pomme, partie comestible", "condition": "Prêt à consommer", "group": "c", "values": {"kcal": 50, "p": 0.3, "c": 11.6, "f": 0.3}}];
 function equivalenceOptions(macro,sourceId,quantity) {
   const source=equivalenceFoods.find(f=>f.id===sourceId && f.group===macro);
   if(!source || !Number.isFinite(quantity) || quantity<0.1 || quantity>10000) return [];
@@ -377,6 +393,8 @@ state.done = state.done || {};
 state.weights = state.weights || [];
 state.shopping = state.shopping || {};
 state.settings = state.settings || {goalWeight:80,kcalTarget:2800};
+state.settings.proteinTarget ||= 170;state.settings.carbTarget ||= 360;state.settings.fatTarget ||= 70;
+state.favorites = state.favorites || [];state.savedMeals = state.savedMeals || [];
 
 function localDate(d=new Date()) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 let selectedDate = localDate();
@@ -430,7 +448,7 @@ function renderJournal() {
     const rows=group.rows.map(row=>`<tr><th scope="row">${escapeText(row.name)}<small>${escapeText(row.detail)}</small><div class="nutrition-actions">${row.legacyId
       ? `<button type="button" class="secondary" onclick="toggleMeal('${row.legacyId}')">Retirer du journal</button>`
       : `<button type="button" class="secondary" onclick="editEntry(${row.index})">Modifier</button><button type="button" class="danger" onclick="deleteEntry(${row.index})">Supprimer</button>`}</div></th>${nutritionCells(row.macros)}</tr>`).join("");
-    return `<section class="nutrition-group"><h3>${group.name}</h3>${rows
+    return `<section class="nutrition-group"><h3>${group.name}</h3>${group.rows.some(r=>r.index!==undefined)?`<button class="secondary small" style="margin:8px" onclick="saveMealTemplate('${group.name}')">★ Enregistrer ce repas</button>`:""}${rows
       ? `<div class="nutrition-scroll" role="region" aria-label="Détail ${group.name}" tabindex="0"><table class="nutrition-table" aria-label="Apports du repas ${group.name}">${nutritionHeader()}<tbody>${rows}</tbody><tfoot><tr><th scope="row">Total du repas</th>${nutritionCells(group.total)}</tr></tfoot></table></div>`
       : '<p class="note" style="padding:0 12px">Aucun aliment enregistré.</p>'}</section>`;
   }).join("")+`<div class="nutrition-total"><div class="nutrition-scroll" role="region" aria-label="Total de la journée" tabindex="0"><table class="nutrition-table" aria-label="Total de la journée">${nutritionHeader()}<tfoot><tr><th scope="row">TOTAL JOURNÉE</th>${nutritionCells(dailyTotals())}</tr></tfoot></table></div></div>`;
@@ -479,10 +497,11 @@ function renderProgress(){
   const kcalTarget = Number(state.settings.kcalTarget || 2800);
   document.getElementById("kcalNow").textContent = Math.round(totals.kcal);
   document.getElementById("kcalTargetText").textContent = kcalTarget;
-  [["p","pBar","pText",targetMacros.p],["c","cBar","cText",targetMacros.c],["f","fBar","fText",targetMacros.f]].forEach(([k,bar,text,t])=>{
+  [["p","pBar","pText",state.settings.proteinTarget],["c","cBar","cText",state.settings.carbTarget],["f","fBar","fText",state.settings.fatTarget]].forEach(([k,bar,text,t])=>{
     document.getElementById(bar).style.width = Math.min(100,(totals[k]/t)*100)+"%";
     document.getElementById(text).textContent = `${Math.round(totals[k])} / ${t} g`;
   });
+  renderRemaining();
 }
 
 function renderPrep(){
@@ -533,53 +552,145 @@ function renderShopping(days=3){
 function toggleShopping(k,v){ state.shopping[k]=v; save(); }
 function resetShopping(){ state.shopping={}; save(); renderShopping(Number(localStorage.getItem("masseShoppingDays")||3)); }
 
+function renderRemaining(){
+  const t=dailyTotals(),s=state.settings;
+  document.getElementById('dailyRemaining').innerHTML=[['Calories','kcal',s.kcalTarget,'kcal'],['Protéines','p',s.proteinTarget,'g'],['Glucides','c',s.carbTarget,'g'],['Lipides','f',s.fatTarget,'g']].map(([label,key,target,unit])=>{
+    const diff=target-t[key];return `<div><span class="small muted">${label}</span><strong>${nutritionNumber(Math.abs(diff))} ${unit}</strong><span class="note">${diff>=0?'restants':'au-dessus de l’objectif'}</span></div>`;
+  }).join('');
+}
+function renderQuickLists(){
+  const preset=document.getElementById('foodPreset'),old=preset.value;
+  preset.innerHTML='<option value="">Saisie libre</option>'+equivalenceFoods.map(f=>`<option value="${f.id}">${escapeText(f.name)} · ${f.condition}</option>`).join('');preset.value=old||'';
+  document.getElementById('favoriteSelect').innerHTML=state.favorites.length?state.favorites.map((f,i)=>`<option value="${i}">${escapeText(f.name)} · ${escapeText(f.condition)}</option>`).join(''):'<option value="">Aucun favori enregistré</option>';
+  document.getElementById('savedMealSelect').innerHTML=state.savedMeals.length?state.savedMeals.map((m,i)=>`<option value="${i}">${escapeText(m.name)} (${m.entries.length} aliments)</option>`).join(''):'<option value="">Aucun repas enregistré</option>';
+}
+function foodSnapshot(){
+  const get=id=>document.getElementById(id).value;
+  const values={kcal:Number(get('foodKcal')),p:Number(get('foodP')),c:Number(get('foodC')),f:Number(get('foodF'))};
+  if(!get('foodName').trim()||['foodKcal','foodP','foodC','foodF'].some(id=>get(id)==='')||Object.entries(values).some(([k,v])=>!Number.isFinite(v)||v<0||v>(k==='kcal'?10000:1000)))return null;
+  return {name:get('foodName').trim(),basis:get('foodBasis'),condition:get('foodCondition'),values};
+}
+function saveFavorite(){
+  const f=foodSnapshot();if(!f){alert('Renseigne le nom et les quatre valeurs nutritionnelles avant de créer un favori.');return;}
+  const existing=state.favorites.findIndex(x=>x.name===f.name&&x.condition===f.condition&&x.basis===f.basis);
+  if(existing>=0){if(!confirm('Mettre à jour les valeurs de ce favori ?'))return;state.favorites[existing]=f;}else state.favorites.push(f);
+  save();renderQuickLists();document.getElementById('foodFeedback').textContent='Favori enregistré. Aucun aliment ajouté au journal.';
+}
+function useFavorite(){
+  const value=document.getElementById('favoriteSelect').value;if(value==='')return;const f=state.favorites[Number(value)];if(!f)return;
+  document.getElementById('foodPreset').value='';fillFoodForm(f,f.basis==='100'?100:1);
+}
+function deleteFavorite(){const v=document.getElementById('favoriteSelect').value;if(v===''||!state.favorites[Number(v)]||!confirm('Supprimer ce favori ? Les journées enregistrées seront conservées.'))return;state.favorites.splice(Number(v),1);save();renderQuickLists();}
+function saveMealTemplate(meal){
+  const entries=day().entries.filter(e=>e.meal===meal);if(!entries.length)return;
+  const answer=prompt('Nom de ce repas habituel :',meal);if(!answer||!answer.trim())return;const name=answer.trim().slice(0,120);
+  const template={name,entries:entries.map(({id,...e})=>JSON.parse(JSON.stringify(e)))};
+  const index=state.savedMeals.findIndex(m=>m.name===name);if(index>=0){if(!confirm('Remplacer le modèle portant ce nom ?'))return;state.savedMeals[index]=template;}else state.savedMeals.push(template);
+  save();renderQuickLists();document.getElementById('quickFeedback').textContent='Repas enregistré : '+name+'.';
+}
+function addSavedMeal(){
+  const value=document.getElementById('savedMealSelect').value,model=state.savedMeals[Number(value)],factor=Number(document.getElementById('savedMealFactor').value),meal=document.getElementById('savedMealTarget').value;
+  if(value===''||!model)return;if(!Number.isFinite(factor)||factor<.1||factor>20||model.entries.some(e=>e.quantity*factor>10000)){alert('Vérifie le nombre de portions (0,1 à 20).');return;}
+  if(!confirm(`Ajouter ${factor} portion(s) de « ${model.name} » au ${meal} du ${selectedDate} ?`))return;
+  const entries=model.entries.map(e=>({...JSON.parse(JSON.stringify(e)),id:crypto.randomUUID(),meal,quantity:Math.round(e.quantity*factor*100)/100}));writableDay().entries.push(...entries);save();renderJournal();renderProgress();document.getElementById('quickFeedback').textContent='Repas ajouté au '+selectedDate+'.';
+}
+function deleteSavedMeal(){const v=document.getElementById('savedMealSelect').value;if(v===''||!state.savedMeals[Number(v)]||!confirm('Supprimer ce modèle de repas ? Les journées enregistrées seront conservées.'))return;state.savedMeals.splice(Number(v),1);save();renderQuickLists();}
+function copyDay(){
+  const date=document.getElementById('copyDate').value,source=state.journal[date];
+  if(!validDate(date)||date===selectedDate){alert('Choisis une autre date à copier.');return;}
+  if(!source||(!source.entries.length&&!Object.values(source.done).some(Boolean))){alert('Cette journée ne contient aucun repas enregistré.');return;}
+  if(!confirm(`Ajouter les repas du ${date} au ${selectedDate} ? Les aliments déjà présents seront conservés ; cela peut créer des doublons.`))return;
+  writableDay().entries.push(...source.entries.map(e=>({...JSON.parse(JSON.stringify(e)),id:crypto.randomUUID()})));
+  for(const [id,done] of Object.entries(source.done))if(done)writableDay().done[id]=true;
+  save();renderMeals();renderJournal();document.getElementById('quickFeedback').textContent='Journée copiée vers le '+selectedDate+'.';
+}
+function makeBackup(){return {app:'Masse',version:1,exportedAt:new Date().toISOString(),state:JSON.parse(JSON.stringify(state))};}
+function exportBackup(){
+  const blob=new Blob([JSON.stringify(makeBackup(),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='Masse-sauvegarde-'+localDate()+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+  document.getElementById('backupFeedback').textContent='Export lancé. Vérifie que le fichier est enregistré dans Fichiers ou tes téléchargements.';
+}
+function validateBackup(payload){
+  const fail=()=>{throw Error('Sauvegarde invalide ou incompatible. Aucune donnée modifiée.');};
+  const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
+  const num=(v,min,max)=>{if(typeof v!=='number'||!Number.isFinite(v)||v<min||v>max)fail();return v;};
+  const str=v=>{if(typeof v!=='string'||!v.trim()||v.length>120)fail();return v;};
+  const array=v=>{if(!Array.isArray(v)||v.length>20000)fail();return v;};
+  if(!object(payload)||payload.app!=='Masse'||payload.version!==1||!object(payload.state))fail();
+  const input=payload.state;if(!object(input.settings)||!object(input.journal))fail();
+  const food=e=>{
+    if(!object(e)||!object(e.values)||!['100','portion'].includes(e.basis)||!['Cru / sec','Cuit','Prêt à consommer'].includes(e.condition))fail();
+    return {name:str(e.name),basis:e.basis,condition:e.condition,values:{kcal:num(e.values.kcal,0,10000),p:num(e.values.p,0,1000),c:num(e.values.c,0,1000),f:num(e.values.f,0,1000)}};
+  };
+  const entry=(e,withId=true)=>{
+    const f=food(e);if(!['Petit-déjeuner','Déjeuner','Dîner','Collation'].includes(e.meal))fail();
+    return {...f,quantity:num(e.quantity,.001,10000),meal:e.meal,...(withId?{id:str(e.id)}:{})};
+  };
+  const done=d=>{if(!object(d))fail();const out={};for(const m of meals)if(d[m.id]!==undefined){if(typeof d[m.id]!=='boolean')fail();out[m.id]=d[m.id];}return out;};
+  const out={journalVersion:1,journal:{},weights:[],favorites:[],savedMeals:[],done:{},shopping:{},settings:{}};
+  for(const [key,min,max,fallback] of [['goalWeight',40,200,80],['kcalTarget',500,10000,2800],['proteinTarget',1,1000,170],['carbTarget',1,2000,360],['fatTarget',1,1000,70]])out.settings[key]=num(input.settings[key]??fallback,min,max);
+  if(Object.keys(input.journal).length>10000)fail();
+  for(const [date,d] of Object.entries(input.journal)){if(!validDate(date)||!object(d))fail();const entries=array(d.entries).map(e=>entry(e));if(new Set(entries.map(e=>e.id)).size!==entries.length)fail();out.journal[date]={entries,done:done(d.done||{})};}
+  out.weights=array(input.weights).map(w=>{if(!object(w)||!validDate(w.date)||w.date>localDate())fail();return {date:w.date,value:num(w.value,40,200)};}).sort((a,b)=>a.date.localeCompare(b.date));
+  if(new Set(out.weights.map(w=>w.date)).size!==out.weights.length)fail();
+  out.favorites=array(input.favorites||[]).map(food);
+  out.savedMeals=array(input.savedMeals||[]).map(m=>{if(!object(m))fail();const entries=array(m.entries).map(e=>entry(e,false));if(!entries.length)fail();return {name:str(m.name),entries};});
+  if(object(input.shopping))for(const key of ['Œufs','Bananes','Lait demi-écrémé','Oranges','Citrons','Miel','Skyr','Amandes','Poulet/dinde','Bœuf','Pâtes complètes','Riz','Légumes','Huile d’olive','Pommes'])if(typeof input.shopping[key]==='boolean')out.shopping[key]=input.shopping[key];
+  if(input.legacyDone)out.legacyDone=done(input.legacyDone);
+  return out;
+}
+async function importBackup(input){
+  const file=input.files[0];if(!file)return;const feedback=document.getElementById('backupFeedback');
+  try{
+    if(file.size>5*1024*1024)throw Error('Fichier trop volumineux (maximum 5 Mo).');
+    const candidate=validateBackup(JSON.parse(await file.text()));
+    if(!confirm(`Restaurer ${Object.keys(candidate.journal).length} journée(s) et ${candidate.weights.length} pesée(s) ? Cela remplacera toutes les données actuelles de cet appareil. Exporte-les d’abord si tu veux les conserver.`)){feedback.textContent='Restauration annulée.';return;}
+    const previous=state;state=candidate;if(!save()){state=previous;throw Error('Stockage indisponible : restauration annulée.');}
+    resetFoodForm();renderAll();feedback.textContent='Sauvegarde restaurée.';
+  }catch(e){feedback.textContent=e instanceof SyntaxError?'Fichier JSON illisible. Aucune donnée modifiée.':e.message;}
+  finally{input.value='';}
+}
+
+function dayIndex(date) {const [y,m,d]=date.split("-").map(Number);return Date.UTC(y,m-1,d)/86400000;}
+function validDate(date) {if(typeof date!=="string" || !/^\d{4}-\d{2}-\d{2}$/.test(date))return false;const n=dayIndex(date);return Number.isFinite(n)&&new Date(n*86400000).toISOString().slice(0,10)===date;}
+function weekWeights(end) {const last=dayIndex(end);return state.weights.filter(w=>dayIndex(w.date)>=last-6 && dayIndex(w.date)<=last);}
+function weightAverage(rows) {return rows.length?rows.reduce((sum,w)=>sum+w.value,0)/rows.length:null;}
 function saveWeight(){
-  const v = Number(document.getElementById("weightInput").value);
-  if(!v) return;
-  const date = localDate();
-  const existing = state.weights.find(x=>x.date===date);
-  if(existing) existing.value=v; else state.weights.push({date,value:v});
-  state.weights.sort((a,b)=>a.date.localeCompare(b.date));
-  save(); document.getElementById("weightInput").value=""; renderWeight();
+  const v=Number(document.getElementById("weightInput").value),date=document.getElementById("weightDate").value;
+  if(!Number.isFinite(v)||v<40||v>200||!validDate(date)||date>localDate()){alert("Indique une date passée ou aujourd’hui et un poids entre 40 et 200 kg.");return;}
+  const existing=state.weights.find(w=>w.date===date);if(existing)existing.value=v;else state.weights.push({date,value:v});
+  state.weights.sort((a,b)=>a.date.localeCompare(b.date));save();document.getElementById("weightInput").value="";renderWeight();
 }
-
+function drawWeightChart(){
+  const end=dayIndex(localDate()),rows=state.weights.filter(w=>dayIndex(w.date)>=end-29&&dayIndex(w.date)<=end);
+  const el=document.getElementById("weightChart");
+  if(!rows.length){el.innerHTML='<p class="note">Ajoute une pesée pour démarrer ta courbe sur 30 jours.</p>';return;}
+  const values=rows.flatMap(w=>[w.value,weightAverage(weekWeights(w.date))]),lo=Math.floor((Math.min(...values)-.3)*10)/10,hi=Math.ceil((Math.max(...values)+.3)*10)/10;
+  const x=d=>50+(dayIndex(d)-(end-29))/29*500,y=v=>175-(v-lo)/(hi-lo)*140;
+  const points=rows.map(w=>`${x(w.date)},${y(w.value)}`).join(" ");
+  const averages=rows.map(w=>({date:w.date,value:weightAverage(weekWeights(w.date))}));
+  const avgpoints=averages.map(w=>`${x(w.date)},${y(w.value)}`).join(" ");
+  el.innerHTML=`<svg class="weight-svg" viewBox="0 0 580 225" role="img" aria-label="Poids des 30 derniers jours, bleu : pesées, vert : moyenne des sept jours précédant chaque pesée"><title>Évolution du poids</title><line x1="50" x2="550" y1="175" y2="175" stroke="#64748b"/><text x="4" y="40" fill="#94a3b8" font-size="12">${hi} kg</text><text x="4" y="177" fill="#94a3b8" font-size="12">${lo} kg</text><polyline points="${points}" fill="none" stroke="#38bdf8" stroke-width="2"/><polyline points="${avgpoints}" fill="none" stroke="#22c55e" stroke-width="2" stroke-dasharray="5 4"/>${rows.map(w=>`<circle cx="${x(w.date)}" cy="${y(w.value)}" r="4" fill="#38bdf8"><title>${w.date} : ${w.value} kg</title></circle>`).join("")}<text x="50" y="205" fill="#94a3b8" font-size="12">${new Date((end-29)*86400000).toISOString().slice(5,10)}</text><text x="505" y="205" fill="#94a3b8" font-size="12">${localDate().slice(5,10)}</text></svg><p class="note">Bleu : pesées · Vert : moyenne glissante sur 7 jours calendaires, calculée à chaque pesée. Les jours sans pesée ne sont pas inventés.</p>`;
+}
 function renderWeight(){
-  const history = state.weights.slice(-14);
-  const current = history.length ? history[history.length-1].value : 71.0;
-  const last7 = history.slice(-7);
-  const avg = last7.length ? (last7.reduce((s,x)=>s+x.value,0)/last7.length) : null;
-  const goal = Number(state.settings.goalWeight||80);
-  document.getElementById("currentWeight").textContent = current.toFixed(1);
-  document.getElementById("goalWeightText").textContent = goal;
-  document.getElementById("avg7").textContent = avg ? avg.toFixed(1) : "—";
-  document.getElementById("remaining").textContent = Math.max(0,goal-current).toFixed(1);
-  document.getElementById("weightHistory").innerHTML = history.length ?
-    history.slice().reverse().map(x=>`<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><span>${x.date}</span><b>${x.value.toFixed(1)} kg</b></div>`).join("")
-    : `<div class="note">Ajoute ton poids chaque matin à jeun. L’app garde les données uniquement sur ton iPhone.</div>`;
-  let advice = "Vise environ +0,2 à +0,3 kg/semaine et juge la tendance sur plusieurs pesées.";
-  if(history.length >= 8){
-    const a = history.slice(-14,-7), b = history.slice(-7);
-    if(a.length && b.length){
-      const avga=a.reduce((s,x)=>s+x.value,0)/a.length, avgb=b.reduce((s,x)=>s+x.value,0)/b.length;
-      const diff=avgb-avga;
-      if(diff < 0.1) advice = "Progression faible sur les moyennes récentes : garde le plan encore quelques jours puis envisage +150 kcal/j si la tendance reste plate.";
-      else if(diff > 0.5) advice = "Progression rapide : surveille encore quelques jours. Si ça reste > +0,5 kg/semaine, baisse légèrement les calories.";
-      else advice = `Progression récente ≈ +${diff.toFixed(2)} kg/semaine : zone cohérente pour une prise de masse contrôlée.`;
-    }
-  }
-  document.getElementById("weightAdvice").textContent = advice;
+  const history=state.weights.filter(w=>w.date<=localDate()).slice(-30),current=history.length?history[history.length-1].value:71;
+  const last7=weekWeights(localDate()),avg=weightAverage(last7),goal=Number(state.settings.goalWeight||80);
+  document.getElementById("currentWeight").textContent=current.toFixed(1);document.getElementById("goalWeightText").textContent=goal;
+  document.getElementById("avg7").textContent=avg===null?"—":avg.toFixed(1);document.getElementById("remaining").textContent=Math.max(0,goal-current).toFixed(1);
+  document.getElementById("weightHistory").innerHTML=history.length?history.slice().reverse().map(w=>`<div class="row" style="padding:8px 0;border-top:1px solid var(--line)"><span>${w.date}</span><b>${w.value.toFixed(1)} kg</b></div>`).join(""):'<p class="note">Aucune pesée enregistrée.</p>';
+  document.getElementById("weightAdvice").textContent=`Moyenne calculée sur ${last7.length} pesée(s) dans les 7 derniers jours. Pour corriger une pesée, sélectionne sa date et enregistre la nouvelle valeur.`;drawWeightChart();
 }
-
 function saveSettings(){
-  state.settings.goalWeight = Number(document.getElementById("goalWeight").value)||80;
-  state.settings.kcalTarget = Number(document.getElementById("kcalTarget").value)||2800;
-  save(); renderAll();
+  const specs={goalWeight:[40,200],kcalTarget:[500,10000],proteinTarget:[1,1000],carbTarget:[1,2000],fatTarget:[1,1000]},next={};
+  for(const [id,[min,max]] of Object.entries(specs)){const v=Number(document.getElementById(id).value);if(!Number.isFinite(v)||v<min||v>max){alert("Vérifie les objectifs : une valeur est hors limites.");return;}next[id]=v;}
+  state.settings=next;save();renderAll();
 }
 
 function renderAll(){
   document.getElementById("goalWeight").value = state.settings.goalWeight;
   document.getElementById("kcalTarget").value = state.settings.kcalTarget;
-  renderMeals(); renderJournal(); renderPrep(); renderWeight();
+  for(const id of ["proteinTarget","carbTarget","fatTarget"])document.getElementById(id).value=state.settings[id];
+  renderQuickLists();renderMeals(); renderJournal(); renderPrep(); renderWeight();
 }
 
 document.querySelectorAll("nav button").forEach(btn=>{
@@ -609,6 +720,9 @@ document.getElementById("foodForm").addEventListener("submit",addFood);
 document.getElementById("foodForm").addEventListener("input",renderFoodPreview);
 document.getElementById("foodForm").addEventListener("change",renderFoodPreview);
 document.getElementById("foodCondition").addEventListener("change",checkPresetCondition);
+document.getElementById("weightDate").value=localDate();
+document.getElementById("weightDate").max=localDate();
+document.getElementById("copyDate").value=new Date((dayIndex(localDate())-1)*86400000).toISOString().slice(0,10);
 initEquivalences();
 renderAll();
 </script>
