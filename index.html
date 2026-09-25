@@ -7,6 +7,37 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Masse" />
+<script>
+(function(){
+  const systemTheme=window.matchMedia('(prefers-color-scheme: dark)');
+  let savedTheme=null;
+  try{savedTheme=localStorage.getItem('masseTheme');}catch(e){}
+  let explicitTheme=savedTheme==='dark'||savedTheme==='light';
+  function applyTheme(theme){
+    document.documentElement.dataset.theme=theme;
+    document.querySelector('meta[name="theme-color"]').content=theme==='dark'?'#111914':'#f5f5f0';
+    const button=document.getElementById('themeToggle');
+    if(button){
+      const dark=theme==='dark';
+      button.innerHTML=appIcon(dark?'sun':'moon');
+      button.setAttribute('aria-label',dark?'Activer le mode clair':'Activer le mode sombre');
+      button.setAttribute('aria-pressed',String(dark));
+      button.title=dark?'Passer en mode clair':'Passer en mode sombre';
+    }
+  }
+  applyTheme(explicitTheme?savedTheme:(systemTheme.matches?'dark':'light'));
+  document.addEventListener('DOMContentLoaded',()=>{
+    applyTheme(document.documentElement.dataset.theme);
+    document.getElementById('themeToggle').addEventListener('click',()=>{
+      const next=document.documentElement.dataset.theme==='dark'?'light':'dark';
+      explicitTheme=true;
+      try{localStorage.setItem('masseTheme',next);}catch(e){}
+      applyTheme(next);
+    });
+  });
+  systemTheme.addEventListener('change',e=>{if(!explicitTheme)applyTheme(e.matches?'dark':'light');});
+})();
+</script>
   <title>Masse — Nutrition</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <style>
@@ -102,10 +133,48 @@
     @media(max-width:600px){.header-caption{font-size:8px;letter-spacing:1.6px}.app-header{padding-left:20px;padding-right:20px}main{padding:22px 18px}.page-heading h1{font-size:30px}.card{padding:20px}.energy-card{padding:24px}.energy-ring{width:116px;height:116px;padding:8px}.energy-ring-inner{width:100px;height:100px}.energy-card .metric{font-size:48px}.macro-columns{gap:10px}.macro-column .muted{font-size:12px}.remaining-card{padding:0 3px 6px}.journal-card{padding:0}.nutrition-scroll{overflow:visible}.nutrition-table{display:block;min-width:0;width:100%}.nutrition-table thead{display:none}.nutrition-table tbody,.nutrition-table tfoot{display:block}.nutrition-table tr{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:12px 16px;gap:6px 8px}.nutrition-table th:first-child{display:block;grid-column:1/-1;width:auto;min-width:0;padding:0 0 8px;border:0}.nutrition-table td{padding:5px 0;border:0;text-align:left;font-weight:650;font-size:13px}.nutrition-table td:before{content:attr(data-label);display:block;color:#75806f;font-size:9px;font-weight:500;margin-bottom:5px}.nutrition-table small{font-size:11px}.nutrition-table tbody tr+tr{border-top:1px solid var(--line)}.nutrition-actions{margin-top:3px}.nutrition-table tfoot th{font-size:12px}.nutrition-total .nutrition-table tr{padding:18px}.split{gap:10px}.toolbox>.card{padding:16px 0 0}.quick-grid{grid-template-columns:1fr 1fr}.quick-grid button{font-size:12px}.card h2{font-size:17px}#eqResults .meal{padding:18px 0}.energy-footer{font-size:11px}}
     @media(min-width:1000px){body{padding-left:200px}.app-header{padding:22px 40px;height:92px}.brand{position:fixed;left:27px;top:28px;z-index:20}.header-caption{margin-left:auto;margin-right:22px}main{padding:35px 34px;max-width:950px}.page-heading h1{font-size:38px}nav{position:fixed;top:0;left:0;bottom:0;right:auto;width:200px;border-radius:0;border:0;border-right:1px solid var(--line);padding:115px 16px 20px;box-shadow:none;z-index:9}nav .wrap{display:flex;flex-direction:column;gap:9px}nav button{flex-direction:row;justify-content:flex-start;gap:12px;padding:15px 17px;font-size:13px}.energy-card{min-height:230px}.energy-main{max-width:580px}.energy-card .metric{font-size:64px}.energy-ring{width:140px;height:140px}.energy-ring-inner{width:122px;height:122px}.remaining-grid strong{font-size:25px}.add-food-cta{width:auto;min-width:240px;margin-left:auto}.journal-card .nutrition-group{margin-bottom:18px}}
 
+
+    :root{color-scheme:light}
+    .header-actions{display:flex;align-items:center;gap:10px}
+    .theme-toggle{display:grid;place-items:center;width:42px;height:42px;padding:0;background:var(--card2);color:var(--text);border:1px solid var(--line);border-radius:50%}
+    button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid var(--accent2);outline-offset:3px}
+    @media(max-width:420px){.header-caption{display:none}}
+    :root[data-theme="dark"]{color-scheme:dark;--bg:#111914;--card:#1a251e;--card2:#26342a;--text:#e9f0e7;--muted:#a4b3a4;--line:#35453a;--accent:#9cc78c;--accent2:#a6c578;--warn:#e8b770;--danger:#ef9b8e}
+    [data-theme="dark"] .app-header{background:rgba(17,25,20,.96)}
+    [data-theme="dark"] .card,[data-theme="dark"] .nutrition-group,[data-theme="dark"] .toolbox{background:var(--card);box-shadow:none}
+    [data-theme="dark"] .date-card,[data-theme="dark"] .remaining-card,[data-theme="dark"] .journal-card{background:transparent}
+    [data-theme="dark"] .energy-card,[data-theme="dark"] .energy-ring-inner{background:#234e39}
+    [data-theme="dark"] .profile-button,[data-theme="dark"] .meal-icon,[data-theme="dark"] .secondary,[data-theme="dark"] .pill{background:var(--card2);color:#d0e2c7;border-color:var(--line)}
+    [data-theme="dark"] .primary,[data-theme="dark"] .brand-mark{background:#acd09a;color:#152d1b}
+    [data-theme="dark"] .brand-mark span{color:#255c44}
+    [data-theme="dark"] input,[data-theme="dark"] select,[data-theme="dark"] .date-card input,[data-theme="dark"] .check{background:#152019;color:var(--text);border-color:var(--line)}
+    [data-theme="dark"] input::placeholder{color:#8fa08f}
+    [data-theme="dark"] label,[data-theme="dark"] .ingredients,[data-theme="dark"] .nutrition-group h3{color:#d2dfcd}
+    [data-theme="dark"] .macro,[data-theme="dark"] .nutrition-table small,[data-theme="dark"] .nutrition-table td:before{color:var(--muted)}
+    [data-theme="dark"] .progress{background:#334336}
+    [data-theme="dark"] #pBar{background:#9dc789}
+    [data-theme="dark"] #cBar{background:#d5b46e}
+    [data-theme="dark"] #fBar{background:#a4afd3}
+    [data-theme="dark"] .nutrition-table thead th{background:#233028;color:#c5d5c0}
+    [data-theme="dark"] .nutrition-table thead th:last-child{background:#30432b;color:#d8ecc8}
+    [data-theme="dark"] .nutrition-table tbody tr:nth-child(even){background:#1f2b23}
+    [data-theme="dark"] .nutrition-table tfoot,[data-theme="dark"] .nutrition-total{background:#293b2a;color:#e0edd7}
+    [data-theme="dark"] .nutrition-table th,[data-theme="dark"] .nutrition-table td{border-bottom-color:var(--line)}
+    [data-theme="dark"] .danger{background:#402622;color:#ffb3a7;border-color:#67413a}
+    [data-theme="dark"] .nutrition-actions .danger{background:transparent;color:#ffb3a7}
+    [data-theme="dark"] .done,[data-theme="dark"] .check.on{background:#355330;color:#e2f3d5}
+    [data-theme="dark"] nav{background:rgba(26,37,30,.97);border-color:var(--line);box-shadow:none}
+    [data-theme="dark"] nav button{color:var(--muted)}
+    [data-theme="dark"] nav button.active{background:#30462d;color:#daf0cb}
+    [data-theme="dark"] #weightChart,[data-theme="dark"] canvas{background:#152019}
+    [data-theme="dark"] .weight-svg polyline:first-of-type{stroke:#acd09a}
+    [data-theme="dark"] .weight-svg circle{fill:#acd09a}
+    [data-theme="dark"] .weight-svg text{fill:var(--muted)}
+
 </style>
 </head>
 <body>
-<header class="app-header"><a class="brand" href="#" onclick="activateScreen('today');return false" aria-label="Masse, accueil"><span class="brand-mark">m<span>·</span></span><span>masse<span class="brand-period">.</span></span></a><span class="header-caption">CHAQUE JOUR COMPTE</span><button class="profile-button" onclick="activateScreen('weight')" aria-label="Mon suivi et mes réglages">M</button></header>
+<header class="app-header"><a class="brand" href="#" onclick="activateScreen('today');return false" aria-label="Masse, accueil"><span class="brand-mark">m<span>·</span></span><span>masse<span class="brand-period">.</span></span></a><span class="header-caption">CHAQUE JOUR COMPTE</span><div class="header-actions"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Activer le mode sombre" aria-pressed="false"></button><button class="profile-button" onclick="activateScreen('weight')" aria-label="Mon suivi et mes réglages">M</button></div></header>
 
 <main>
   <section id="today" class="screen active">
