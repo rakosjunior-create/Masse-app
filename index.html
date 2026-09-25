@@ -57,6 +57,21 @@
     .shopping-item:first-child{border-top:0}.shopping-item input{width:20px;height:20px}
     canvas{width:100%;height:180px;background:#0d1627;border-radius:12px}
     @media (max-width:420px){.grid{grid-template-columns:1fr 1fr}.metric{font-size:24px}}
+
+    .nutrition-group{margin:18px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+    .nutrition-group h3{margin:0;padding:12px;background:#1d2a3f;text-transform:uppercase;font-size:14px}
+    .nutrition-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    .nutrition-table{width:100%;min-width:530px;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+    .nutrition-table th,.nutrition-table td{padding:11px 9px;text-align:right;border-bottom:1px solid var(--line)}
+    .nutrition-table th:first-child,.nutrition-table td:first-child{text-align:left;width:42%;min-width:190px}
+    .nutrition-table thead th{background:#0d1627;font-size:12px}
+    .nutrition-table thead th:last-child{background:#367e20;color:white}
+    .nutrition-table tbody tr:nth-child(even){background:#172033}
+    .nutrition-table tfoot{background:#1d2a3f;font-weight:800}
+    .nutrition-table small{display:block;color:var(--muted);font-weight:400;margin-top:5px}
+    .nutrition-actions{display:flex;gap:6px;margin-top:8px}
+    .nutrition-actions button{padding:7px 9px;font-size:11px}
+    .nutrition-total{border:1px solid #4c9f35;border-radius:12px;overflow:hidden;margin-top:18px}
   </style>
 </head>
 <body>
@@ -95,6 +110,7 @@
       <div class="progress"><div id="fBar"></div></div>
     </div>
 
+    <div class="card"><h2>Ma journée, repas par repas</h2><p class="note">Apports calculés pour les quantités mangées. Fais glisser les tableaux horizontalement pour voir toutes les colonnes.</p><div id="journalEntries"></div></div>
     <div class="card">
       <h2>Repères pour 100 g de viande crue</h2>
       <p class="note">Viande pesée avant cuisson, sans huile ni sauce. La viande rouge varie selon le morceau : ici, le repère est la bavette d’aloyau.</p>
@@ -133,7 +149,7 @@
         <p id="foodFeedback" class="note" role="status" aria-live="polite"></p>
       </form>
     </div>
-    <div class="card"><h2>Ce que j’ai mangé</h2><div id="journalEntries"></div></div>
+    
     <div class="card">
       <details><summary>Ancien planning — repas prédéfinis</summary>
       <p class="note">Ne coche un repas que si tu l’as mangé tel quel. S’il est déjà saisi au-dessus, ne le coche pas : il serait compté deux fois. Les valeurs du planning sont des estimations.</p>
@@ -327,12 +343,34 @@ function changeDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
   selectedDate=value;document.getElementById("journalDate").value=value;resetFoodForm();document.getElementById("foodFeedback").textContent="";renderMeals();renderJournal();
 }
+
+function nutritionNumber(n) { return Number(n).toLocaleString("fr-FR",{maximumFractionDigits:1}); }
+function nutritionCells(m) { return `<td>${Math.round(m.kcal)}</td><td>${nutritionNumber(m.f)}</td><td>${nutritionNumber(m.c)}</td><td>${nutritionNumber(m.p)}</td>`; }
+function nutritionHeader() { return '<thead><tr><th scope="col">Aliment / quantité</th><th scope="col">Calories<br>kcal</th><th scope="col">Lipides<br>g</th><th scope="col">Glucides<br>g</th><th scope="col">Protéines<br>g</th></tr></thead>'; }
+function journalGroups() {
+  const order=["Petit-déjeuner","Déjeuner","Collation","Dîner"];
+  const groups=Object.fromEntries(order.map(k=>[k,[]]));
+  day().entries.forEach((e,index)=>{
+    const key=order.includes(e.meal)?e.meal:"Collation";
+    groups[key].push({name:e.name,detail:`${e.quantity} ${e.basis==="100"?"g":"pièce(s) / portion(s)"} · ${e.condition}`,macros:entryMacros(e),index});
+  });
+  const mealMap={breakfast:"Petit-déjeuner",snack:"Collation",lunch:"Déjeuner",preworkout:"Collation",dinner:"Dîner"};
+  meals.filter(m=>day().done[m.id]).forEach(m=>{
+    groups[mealMap[m.id]||"Collation"].push({name:m.name,detail:"Ancien planning · repas complet estimé",macros:m.macros,legacyId:m.id});
+  });
+  return order.map(name=>({name,rows:groups[name],total:groups[name].reduce((a,row)=>{for(const k of ["kcal","p","c","f"])a[k]+=row.macros[k];return a;},{kcal:0,p:0,c:0,f:0})}));
+}
 function renderJournal() {
   const el=document.getElementById("journalEntries");
-  el.innerHTML=day().entries.length ? day().entries.map((e,i)=>{
-    const m=entryMacros(e);
-    return `<div class="meal"><div class="meal-time">${escapeText(e.meal)}</div><div class="meal-title">${escapeText(e.name)}</div><div class="ingredients">${e.quantity} ${e.basis==="100"?"g":"pièce(s) / portion(s)"} · ${escapeText(e.condition)}</div><div class="macro">${Math.round(m.kcal)} kcal · P ${m.p.toFixed(1)} g · G ${m.c.toFixed(1)} g · L ${m.f.toFixed(1)} g</div><div class="row" style="margin-top:8px"><button class="secondary" onclick="editEntry(${i})">Modifier</button><button class="danger" onclick="deleteEntry(${i})">Supprimer</button></div></div>`;
-  }).join("") : '<p class="note">Aucun aliment saisi pour cette date.</p>';
+  const groups=journalGroups();
+  el.innerHTML=groups.map(group=>{
+    const rows=group.rows.map(row=>`<tr><th scope="row">${escapeText(row.name)}<small>${escapeText(row.detail)}</small><div class="nutrition-actions">${row.legacyId
+      ? `<button type="button" class="secondary" onclick="toggleMeal('${row.legacyId}')">Retirer du journal</button>`
+      : `<button type="button" class="secondary" onclick="editEntry(${row.index})">Modifier</button><button type="button" class="danger" onclick="deleteEntry(${row.index})">Supprimer</button>`}</div></th>${nutritionCells(row.macros)}</tr>`).join("");
+    return `<section class="nutrition-group"><h3>${group.name}</h3>${rows
+      ? `<div class="nutrition-scroll" role="region" aria-label="Détail ${group.name}" tabindex="0"><table class="nutrition-table" aria-label="Apports du repas ${group.name}">${nutritionHeader()}<tbody>${rows}</tbody><tfoot><tr><th scope="row">Total du repas</th>${nutritionCells(group.total)}</tr></tfoot></table></div>`
+      : '<p class="note" style="padding:0 12px">Aucun aliment enregistré.</p>'}</section>`;
+  }).join("")+`<div class="nutrition-total"><div class="nutrition-scroll" role="region" aria-label="Total de la journée" tabindex="0"><table class="nutrition-table" aria-label="Total de la journée">${nutritionHeader()}<tfoot><tr><th scope="row">TOTAL JOURNÉE</th>${nutritionCells(dailyTotals())}</tr></tfoot></table></div></div>`;
 }
 function editEntry(index) {
   const e=day().entries[index]; if (!e) return;editingId=e.id;document.getElementById("foodPreset").value="";
@@ -371,7 +409,7 @@ function renderMeals(){
   renderProgress();
 }
 
-function toggleMeal(id){ const d=writableDay();d.done[id]=!d.done[id]; save(); renderMeals(); }
+function toggleMeal(id){ const d=writableDay();d.done[id]=!d.done[id]; save(); renderMeals(); renderJournal(); }
 
 function renderProgress(){
   const totals = dailyTotals();
