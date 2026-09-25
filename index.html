@@ -44,7 +44,7 @@
     .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0d1627;border:1px solid var(--line);font-size:12px;color:var(--muted)}
     nav{position:fixed;bottom:0;left:0;right:0;padding:8px 10px calc(8px + env(safe-area-inset-bottom));
       background:rgba(10,16,29,.96);backdrop-filter:blur(16px);border-top:1px solid var(--line);z-index:10}
-    nav .wrap{max-width:760px;margin:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+    nav .wrap{max-width:760px;margin:auto;display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
     nav button{background:transparent;color:var(--muted);font-size:12px;padding:8px 4px}
     nav button.active{color:var(--text);background:#162238}
     .screen{display:none}.screen.active{display:block}
@@ -232,11 +232,31 @@
       <button class="secondary" style="margin-top:10px;width:100%" onclick="saveSettings()">Sauvegarder les réglages</button>
     </div>
   </section>
+
+  <section id="equivalences" class="screen">
+    <div class="card">
+      <h2>Équivalences alimentaires</h2>
+      <p class="note">Choisis le nutriment à conserver, l’aliment de départ et sa quantité. Chaque résultat indique la portion de remplacement et tous ses apports.</p>
+      <label for="eqMacro">Je veux garder autant de…</label>
+      <select id="eqMacro" onchange="initEquivalences()"><option value="p">Protéines</option><option value="c">Glucides</option><option value="f">Lipides</option></select>
+      <label for="eqFood">Aliment de départ</label><select id="eqFood" onchange="renderEquivalences()"></select>
+      <label for="eqQuantity">Quantité de départ (g)</label><input id="eqQuantity" type="number" min="0.1" max="10000" step="any" value="100" inputmode="decimal" oninput="renderEquivalences()">
+      <p class="note">Respecte l’état indiqué : cru, cuit ou prêt à consommer. Pour les œufs, le poids est sans coquille. Les féculents proposés ici sont pesés cuits.</p>
+      <div id="eqSummary" role="status" class="ingredients"></div>
+    </div>
+    <div class="card"><h2>Par quoi remplacer ?</h2><p class="note">≈ Même quantité du nutriment choisi, mais calories et autres nutriments différents. Les portions sont arrondies à 0,1 g. « Préparer la saisie » remplit le formulaire ; rien n’est ajouté au journal avant ta validation.</p><div id="eqResults"></div></div>
+    <div class="card"><details><summary>Valeurs et sources</summary>
+      <p class="note">Repères moyens pour 100 g, sans huile ni sauce ajoutée. Priorité aux valeurs de ton emballage lorsqu’elles sont disponibles. Les traces de protéines de l’huile d’olive sont arrondies à zéro.</p>
+      <p class="note"><a style="color:var(--accent)" href="https://www.afdn.org/sites/www.afdn.org/files/medias/documents/table%20de%20composition%20Ciqual%202020%20version%20finale%20_.pdf" target="_blank" rel="noopener">Table Ciqual 2020 diffusée par l’AFDN</a>. Pour le poulet cru et la bavette crue : fiches Ciqual reprises par Mes Infos Nutrition (liens dans les repères pour 100 g). <a style="color:var(--accent)" href="https://www.mes-infos-nutrition.com/aliments-matieres_grasses/huiles_et_graisses_vegetales/huile_dolive_vierge_extra" target="_blank" rel="noopener">Huile d’olive</a>. <a style="color:var(--accent)" href="https://www.santemagazine.fr/alimentation/nutriments/guide-des-calories/matieres-grasses-ajoutees/huile-de-lin-918023" target="_blank" rel="noopener">Huile de lin : Ciqual via Santé Magazine</a>.</p>
+    </details></div>
+  </section>
+
 </main>
 
 <nav>
   <div class="wrap">
     <button class="active" data-screen="today">Aujourd’hui</button>
+    <button data-screen="equivalences">Équiv.</button>
     <button data-screen="prep">Meal prep</button>
     <button data-screen="shopping">Courses</button>
     <button data-screen="weight">Poids</button>
@@ -304,6 +324,49 @@ function checkPresetCondition() {
     document.getElementById("foodFeedback").textContent="Renseigne les valeurs correspondant à la viande cuite avant d’enregistrer.";
   }
   renderFoodPreview();
+}
+
+
+const equivalenceFoods=[{"id":"chicken","name":"Filet de poulet sans peau","condition":"Cru / sec","group":"p","values":{"kcal":110,"p":23.4,"c":0,"f":1.5}},{"id":"beef","name":"Bavette d’aloyau","condition":"Cru / sec","group":"p","values":{"kcal":133,"p":20.4,"c":0,"f":5.67}},{"id":"chickencooked","name":"Filet de poulet sans peau, poêlé","condition":"Cuit","group":"p","values":{"kcal":138,"p":30.1,"c":0,"f":2}},{"id":"mince","name":"Steak haché 5 % MG, cuit","condition":"Cuit","group":"p","values":{"kcal":155,"p":25.5,"c":0,"f":5.9}},{"id":"turkey","name":"Dinde, viande rôtie","condition":"Cuit","group":"p","values":{"kcal":151,"p":29.1,"c":0,"f":3.8}},{"id":"cod","name":"Cabillaud, au four","condition":"Cuit","group":"p","values":{"kcal":95,"p":22.3,"c":0,"f":0.6}},{"id":"tuna","name":"Thon au naturel, égoutté","condition":"Prêt à consommer","group":"p","values":{"kcal":111,"p":26.8,"c":0,"f":0.4}},{"id":"salmon","name":"Saumon, vapeur","condition":"Cuit","group":"p","values":{"kcal":196,"p":23,"c":0,"f":11.5}},{"id":"egg","name":"Œuf dur, sans coquille","condition":"Cuit","group":"p","values":{"kcal":134,"p":13.5,"c":0.5,"f":8.6}},{"id":"rice","name":"Riz blanc, cuit non salé","condition":"Cuit","group":"c","values":{"kcal":143,"p":2.9,"c":31.8,"f":0.4}},{"id":"brownrice","name":"Riz complet, cuit non salé","condition":"Cuit","group":"c","values":{"kcal":152,"p":3.2,"c":32.6,"f":1}},{"id":"pasta","name":"Pâtes standard, cuites non salées","condition":"Cuit","group":"c","values":{"kcal":121,"p":4,"c":25,"f":0.6}},{"id":"wholepasta","name":"Pâtes complètes, cuites non salées","condition":"Cuit","group":"c","values":{"kcal":120,"p":4.6,"c":23.4,"f":0.9}},{"id":"potato","name":"Pomme de terre, à l’eau","condition":"Cuit","group":"c","values":{"kcal":77,"p":1.8,"c":16.7,"f":0.3}},{"id":"sweetpotato","name":"Patate douce, cuite","condition":"Cuit","group":"c","values":{"kcal":57,"p":1.7,"c":12.2,"f":0.2}},{"id":"quinoa","name":"Quinoa, cuit non salé","condition":"Cuit","group":"c","values":{"kcal":140,"p":4.7,"c":27.9,"f":1.1}},{"id":"bread","name":"Pain complet T150","condition":"Prêt à consommer","group":"c","values":{"kcal":227,"p":8.4,"c":44.3,"f":1.8}},{"id":"olive","name":"Huile d’olive","condition":"Prêt à consommer","group":"f","values":{"kcal":900,"p":0,"c":0,"f":99.9}},{"id":"almond","name":"Amandes avec peau","condition":"Prêt à consommer","group":"f","values":{"kcal":575,"p":18.8,"c":9.5,"f":51.3}},{"id":"walnut","name":"Cerneaux de noix","condition":"Prêt à consommer","group":"f","values":{"kcal":686,"p":13.3,"c":6.9,"f":67.3}},{"id":"lin","name":"Huile de lin","condition":"Prêt à consommer","group":"f","values":{"kcal":900,"p":0,"c":0,"f":100}}];
+function equivalenceOptions(macro,sourceId,quantity) {
+  const source=equivalenceFoods.find(f=>f.id===sourceId && f.group===macro);
+  if(!source || !Number.isFinite(quantity) || quantity<0.1 || quantity>10000) return [];
+  const target=source.values[macro]*quantity/100;
+  return equivalenceFoods.filter(f=>f.group===macro && f.id!==sourceId && f.values[macro]>0).map(food=>{
+    const grams=Math.round(target/food.values[macro]*1000)/10;
+    const macros=Object.fromEntries(Object.entries(food.values).map(([k,v])=>[k,v*grams/100]));
+    return {food,grams,macros};
+  });
+}
+function initEquivalences() {
+  const macro=document.getElementById("eqMacro").value;
+  const options=equivalenceFoods.filter(f=>f.group===macro);
+  document.getElementById("eqFood").innerHTML=options.map(f=>`<option value="${f.id}">${escapeText(f.name)} · ${f.condition}</option>`).join("");
+  document.getElementById("eqFood").value=options[0].id;
+  document.getElementById("eqQuantity").value=macro==="f"?"10":"100";renderEquivalences();
+}
+function renderEquivalences() {
+  const macro=document.getElementById("eqMacro").value,sourceId=document.getElementById("eqFood").value,q=Number(document.getElementById("eqQuantity").value);
+  const source=equivalenceFoods.find(f=>f.id===sourceId);
+  const results=equivalenceOptions(macro,sourceId,q);
+  if(!results.length){document.getElementById("eqSummary").textContent="Indique une quantité entre 0,1 et 10 000 g.";document.getElementById("eqResults").innerHTML="";return;}
+  const label={p:"protéines",c:"glucides",f:"lipides"}[macro];
+  const kcal=source.values.kcal*q/100;
+  document.getElementById("eqSummary").textContent=`${nutritionNumber(q)} g de ${source.name} apportent environ ${nutritionNumber(source.values[macro]*q/100)} g de ${label} et ${Math.round(kcal)} kcal.`;
+  document.getElementById("eqResults").innerHTML=results.map(({food,grams,macros})=>{
+    const delta=Math.round(macros.kcal-kcal);
+    return `<div class="meal"><div class="meal-title">≈ ${nutritionNumber(grams)} g · ${escapeText(food.name)}</div><p class="note">${food.condition}</p><div class="ingredients">${Math.round(macros.kcal)} kcal · ${delta>0?"+":""}${delta} kcal par rapport au départ</div><div class="macro">Protéines ${nutritionNumber(macros.p)} g · Glucides ${nutritionNumber(macros.c)} g · Lipides ${nutritionNumber(macros.f)} g</div><button class="secondary" style="margin-top:10px" onclick="useEquivalent('${food.id}',${grams})">Préparer la saisie</button></div>`;
+  }).join("");
+}
+function useEquivalent(id,quantity) {
+  const food=equivalenceFoods.find(f=>f.id===id);if(!food)return;
+  if(editingId && !confirm("Abandonner la correction en cours pour préparer cet aliment ?"))return;
+  resetFoodForm();
+  for(const [key,value] of Object.entries({foodName:food.name,foodBasis:"100",foodCondition:food.condition,foodQuantity:quantity,foodKcal:food.values.kcal,foodP:food.values.p,foodC:food.values.c,foodF:food.values.f}))document.getElementById(key).value=value;
+  updateQuantityLabel();renderFoodPreview();
+  document.querySelector('nav button[data-screen="today"]').click();
+  document.getElementById("foodFeedback").textContent="Choisis le repas puis valide pour l’ajouter au journal.";
+  document.getElementById("foodName").focus();
 }
 
 const targetMacros = {p:170,c:360,f:70};
@@ -546,6 +609,7 @@ document.getElementById("foodForm").addEventListener("submit",addFood);
 document.getElementById("foodForm").addEventListener("input",renderFoodPreview);
 document.getElementById("foodForm").addEventListener("change",renderFoodPreview);
 document.getElementById("foodCondition").addEventListener("change",checkPresetCondition);
+initEquivalences();
 renderAll();
 </script>
 </body>
