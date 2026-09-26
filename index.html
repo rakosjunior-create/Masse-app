@@ -171,6 +171,11 @@
     [data-theme="dark"] .weight-svg circle{fill:#acd09a}
     [data-theme="dark"] .weight-svg text{fill:var(--muted)}
 
+
+    .daily-menu{margin:28px 0}.menu-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.menu-heading h2{font-size:25px;margin:6px 0 0}.daily-menu>.note{line-height:1.6;margin:12px 0 18px}
+    .menu-totals{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:12px;padding:20px;background:var(--card2);border-radius:18px;margin-bottom:16px}.menu-totals strong{display:block;margin-top:6px;font-size:20px}.menu-status{grid-column:1/-1;margin:4px 0 0}
+    .menu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.planned-meal{display:flex;flex-direction:column;padding:22px;border:1px solid var(--line);border-radius:20px;background:var(--card)}.planned-meal h3{font-size:20px;margin:16px 0 10px}.planned-meal.is-eaten{border-color:var(--accent2)}.menu-ingredients{padding:0;list-style:none;line-height:1.65;margin:0 0 18px;color:var(--text)}.menu-ingredients li{padding:3px 0}.menu-nutrients{margin-top:auto;border-top:1px solid var(--line);padding:16px 0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.menu-nutrients>strong{grid-column:1/-1;font-size:24px}.menu-nutrients>strong span{font-size:12px;color:var(--muted);font-weight:500}.menu-nutrients>span{color:var(--muted);font-size:11px}.menu-nutrients b{display:block;color:var(--text);font-size:14px;margin-top:4px}.planned-meal>button{width:100%}
+    @media(max-width:600px){.menu-grid{grid-template-columns:1fr}.menu-totals{gap:12px 8px;padding:16px}.menu-totals strong{font-size:17px}.menu-totals .small{font-size:10px}.planned-meal{padding:20px}.menu-heading h2{font-size:23px}}
 </style>
 </head>
 <body>
@@ -257,11 +262,13 @@
       </form>
     </div>
     
-    <div class="card">
-      <details><summary>Ancien planning — repas prédéfinis</summary>
-      <p class="note">Ne coche un repas que si tu l’as mangé tel quel. S’il est déjà saisi au-dessus, ne le coche pas : il serait compté deux fois. Les valeurs du planning sont des estimations.</p>
-      <div id="meals"></div></details>
-    </div>
+    <section class="daily-menu" id="dailyMenu" aria-labelledby="dailyMenuTitle">
+      <div class="menu-heading"><div><div class="eyebrow">TA BASE AU QUOTIDIEN</div><h2 id="dailyMenuTitle">Ton menu du jour</h2></div><span class="pill">Prévu</span></div>
+      <p class="note">Ton menu de base, avec les quantités et les apports estimés par repas. Les calories sont comptées uniquement lorsque tu indiques avoir mangé le repas.</p>
+      <div id="menuTotals" class="menu-totals"></div>
+      <div id="meals" class="menu-grid"></div>
+      <p class="note">Viandes pesées crues, riz et pâtes pesés secs ; fruits et œufs indiqués à la pièce. Les apports du menu sont des estimations. Si tes quantités changent, utilise « Ajouter un aliment ». Ne valide pas un repas déjà saisi dans ton journal.</p>
+    </section>
   </section>
 
   <section id="prep" class="screen">
@@ -396,12 +403,12 @@ function setupDesign(){
   const dateCard=document.getElementById('journalDate').closest('.card');dateCard.classList.add('date-card');
   const heading=document.createElement('div');heading.className='page-heading';heading.innerHTML='<div><div class="eyebrow">TON SUIVI NUTRITION</div><h1>Un jour de plus.<br>Un peu plus fort.</h1><p>La régularité fait la différence.</p></div>';today.prepend(heading);
   document.getElementById('currentWeight').closest('.card').classList.add('weight-mini');
-  const energy=document.getElementById('kcalNow').closest('.card');energy.parentElement.classList.add('summary-grid');energy.classList.add('energy-card');
+  const energy=document.getElementById('kcalNow').closest('.card');energy.parentElement.classList.add('summary-grid');energy.parentElement.after(document.getElementById('dailyMenu'));energy.classList.add('energy-card');
   energy.innerHTML='<div class="energy-top"><span class="energy-label">ÉNERGIE DU JOUR</span><span class="energy-live" id="energyDate"></span></div><div class="energy-main"><div><div class="metric"><span id="kcalNow">0</span></div><div class="small muted">kcal consommées / <span id="kcalTargetText">2800</span></div></div><div class="energy-ring" id="energyRing"><div class="energy-ring-inner"><strong id="energyPercent">0%</strong><span>de ton objectif</span></div></div></div><div class="energy-footer"><strong id="energyBalance"></strong><span>À ton rythme.</span></div>';
   const macroCard=document.getElementById('pBar').closest('.card');macroCard.classList.add('macro-card');macroCard.querySelector('h2').textContent='Tes macronutriments';const columns=document.createElement('div');columns.className='macro-columns';
   for(const key of ['p','c','f']){const progress=document.getElementById(key+'Bar').parentElement,label=progress.previousElementSibling,column=document.createElement('div');column.className='macro-column';column.append(label,progress);columns.append(column);}macroCard.append(columns);
   document.getElementById('dailyRemaining').closest('.card').classList.add('remaining-card');
-  const journal=document.getElementById('journalEntries').closest('.card');journal.classList.add('journal-card');journal.querySelector('h2').textContent='Au menu aujourd’hui';
+  const journal=document.getElementById('journalEntries').closest('.card');journal.classList.add('journal-card');journal.querySelector('h2').textContent='Ton journal alimentaire';
   const cta=document.createElement('button');cta.className='primary add-food-cta';cta.innerHTML=appIcon('plus')+'Ajouter un aliment';cta.onclick=openFoodEditor;journal.before(cta);
   const add=document.createElement('section');add.id='addFood';add.className='screen';add.innerHTML='<div class="page-heading"><div><div class="eyebrow">LE JOURNAL</div><h1>À table.</h1><p>Un aliment, une quantité. C’est enregistré.</p></div><button class="secondary" onclick="activateScreen(\'today\')">Retour</button></div>';
   document.querySelector('main').append(add);const formCard=document.getElementById('foodForm').closest('.card');add.append(formCard);formCard.querySelector('h2').textContent='Qu’as-tu mangé ?';
@@ -415,8 +422,8 @@ function setupDesign(){
 
 const meals = [
   {
-    id:"breakfast", time:"07:00", name:"Shaker",
-    items:["5 œufs","1 banane","250 ml lait demi-écrémé","1 orange","1 citron pressé","30 g miel"],
+    id:"breakfast", time:"07:00", name:"Petit-déjeuner",
+    items:["5 œufs cuits, à manger à côté","1 banane","250 ml lait demi-écrémé","1 orange","1 citron pressé","30 g miel"],
     macros:{kcal:750,p:43,c:86,f:29}
   },
   {
@@ -569,7 +576,7 @@ function journalGroups() {
   });
   const mealMap={breakfast:"Petit-déjeuner",snack:"Collation",lunch:"Déjeuner",preworkout:"Collation",dinner:"Dîner"};
   meals.filter(m=>day().done[m.id]).forEach(m=>{
-    groups[mealMap[m.id]||"Collation"].push({name:m.name,detail:"Ancien planning · repas complet estimé",macros:m.macros,legacyId:m.id});
+    groups[mealMap[m.id]||"Collation"].push({name:m.name,detail:"Menu de base · repas complet estimé",macros:m.macros,legacyId:m.id});
   });
   return order.map(name=>({name,rows:groups[name],total:groups[name].reduce((a,row)=>{for(const k of ["kcal","p","c","f"])a[k]+=row.macros[k];return a;},{kcal:0,p:0,c:0,f:0})}));
 }
@@ -607,18 +614,19 @@ function addFood(event) {
 }
 
 function renderMeals(){
-  const el = document.getElementById("meals");
-  el.innerHTML = meals.map(m=>{
-    const done = !!day().done[m.id];
-    return `<div class="meal">
-      <div class="row">
-        <div><div class="meal-time">${m.time}</div><div class="meal-title">${m.name}</div></div>
-        <button class="check ${done?"on":""}" onclick="toggleMeal('${m.id}')">${done?"✓":""}</button>
-      </div>
-      <div class="ingredients">${m.items.join(" • ")}</div>
-      <div class="macro">${m.macros.kcal} kcal · P ${m.macros.p} g · G ${m.macros.c} g · L ${m.macros.f} g</div>
-    </div>`;
-  }).join("");
+  const totals=meals.reduce((acc,m)=>{for(const k of ['kcal','p','c','f'])acc[k]+=m.macros[k];return acc;},{kcal:0,p:0,c:0,f:0});
+  const completed=meals.filter(m=>day().done[m.id]).length;
+  document.getElementById('menuTotals').innerHTML=`<div><span class="small muted">Total prévu · estimé</span><strong>${totals.kcal.toLocaleString('fr-FR')} kcal</strong></div><div><span class="small muted">Protéines</span><strong>${totals.p} g</strong></div><div><span class="small muted">Glucides</span><strong>${totals.c} g</strong></div><div><span class="small muted">Lipides</span><strong>${totals.f} g</strong></div><p class="note menu-status" role="status">${completed} / ${meals.length} repas validés pour cette journée · Horaires indicatifs</p>`;
+  document.getElementById('meals').innerHTML=meals.map(m=>{
+    const done=!!day().done[m.id];
+    return `<article class="planned-meal ${done?'is-eaten':''}">
+      <div class="row"><span class="meal-time">${m.time}</span><span class="pill">${done?'Mangé':'À manger'}</span></div>
+      <h3>${m.name}</h3>
+      <ul class="menu-ingredients">${m.items.map(item=>`<li>${escapeText(item)}</li>`).join('')}</ul>
+      <div class="menu-nutrients"><strong>${m.macros.kcal} <span>kcal</span></strong><span>Protéines <b>${m.macros.p} g</b></span><span>Glucides <b>${m.macros.c} g</b></span><span>Lipides <b>${m.macros.f} g</b></span></div>
+      <button type="button" class="${done?'secondary':'primary'}" aria-pressed="${done}" aria-label="${done?'Retirer du journal :':'J’ai mangé ce repas :'} ${m.name}" onclick="toggleMeal('${m.id}')">${done?'✓ Mangé · Annuler':'J’ai mangé ce repas'}</button>
+    </article>`;
+  }).join('');
   renderProgress();
 }
 
@@ -862,3 +870,4 @@ renderAll();
 </script>
 </body>
 </html>
+
