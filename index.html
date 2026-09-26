@@ -176,10 +176,12 @@
     .menu-totals{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:12px;padding:20px;background:var(--card2);border-radius:18px;margin-bottom:16px}.menu-totals strong{display:block;margin-top:6px;font-size:20px}.menu-status{grid-column:1/-1;margin:4px 0 0}
     .menu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.planned-meal{display:flex;flex-direction:column;padding:22px;border:1px solid var(--line);border-radius:20px;background:var(--card)}.planned-meal h3{font-size:20px;margin:16px 0 10px}.planned-meal.is-eaten{border-color:var(--accent2)}.menu-ingredients{padding:0;list-style:none;line-height:1.65;margin:0 0 18px;color:var(--text)}.menu-ingredients li{padding:3px 0}.menu-nutrients{margin-top:auto;border-top:1px solid var(--line);padding:16px 0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.menu-nutrients>strong{grid-column:1/-1;font-size:24px}.menu-nutrients>strong span{font-size:12px;color:var(--muted);font-weight:500}.menu-nutrients>span{color:var(--muted);font-size:11px}.menu-nutrients b{display:block;color:var(--text);font-size:14px;margin-top:4px}.planned-meal>button{width:100%}
     @media(max-width:600px){.menu-grid{grid-template-columns:1fr}.menu-totals{gap:12px 8px;padding:16px}.menu-totals strong{font-size:17px}.menu-totals .small{font-size:10px}.planned-meal{padding:20px}.menu-heading h2{font-size:23px}}
+
+.menu-edit-row{border:1px solid var(--line);border-radius:16px;padding:18px;margin:20px 0}.menu-edit-row legend{font-weight:700;padding:0 8px}.menu-edit-row textarea{width:100%;font:inherit;font-size:16px;line-height:1.6;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);resize:vertical}.editor-save{display:flex;flex-wrap:wrap;gap:10px}.editor-save .note{width:100%}button:disabled{opacity:.45;cursor:not-allowed}
 </style>
 </head>
 <body>
-<header class="app-header"><a class="brand" href="#" onclick="activateScreen('today');return false" aria-label="Masse, accueil"><span class="brand-mark">m<span>·</span></span><span>masse<span class="brand-period">.</span></span></a><span class="header-caption">CHAQUE JOUR COMPTE</span><div class="header-actions"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Activer le mode sombre" aria-pressed="false"></button><button class="profile-button" onclick="activateScreen('weight')" aria-label="Mon suivi et mes réglages">M</button></div></header>
+<header class="app-header"><a class="brand" href="#" onclick="activateScreen('today');return false" aria-label="Masse, accueil"><span class="brand-mark">m<span>·</span></span><span>masse<span class="brand-period">.</span></span></a><span class="header-caption">CHAQUE JOUR COMPTE</span><div class="header-actions"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Activer le mode sombre" aria-pressed="false"></button><button class="profile-button" onclick="openMenuEditor()" aria-label="Personnaliser mon application">M</button></div></header>
 
 <main>
   <section id="today" class="screen active">
@@ -263,7 +265,7 @@
     </div>
     
     <section class="daily-menu" id="dailyMenu" aria-labelledby="dailyMenuTitle">
-      <div class="menu-heading"><div><div class="eyebrow">TA BASE AU QUOTIDIEN</div><h2 id="dailyMenuTitle">Ton menu du jour</h2></div><span class="pill">Prévu</span></div>
+      <div class="menu-heading"><div><div class="eyebrow">TA BASE AU QUOTIDIEN</div><h2 id="dailyMenuTitle">Ton menu du jour</h2></div><button class="secondary" type="button" onclick="openMenuEditor()">Modifier mon menu</button></div>
       <p class="note">Ton menu de base, avec les quantités et les apports estimés par repas. Les calories sont comptées uniquement lorsque tu indiques avoir mangé le repas.</p>
       <div id="menuTotals" class="menu-totals"></div>
       <div id="meals" class="menu-grid"></div>
@@ -367,6 +369,14 @@
     </details></div>
   </section>
 
+<section id="menuEditor" class="screen">
+ <div class="page-heading"><div><div class="eyebrow">À TA FAÇON</div><h1>Personnaliser.</h1><p>Ton menu, tes horaires, tes quantités.</p></div><button class="secondary" onclick="leaveMenuEditor()">Retour</button></div>
+ <div class="card"><h2>Mes réglages</h2><div class="row"><button class="secondary" onclick="activateScreen('weight')">Poids, objectifs et sauvegardes</button><button class="secondary" onclick="openFoodEditor()">Aliments et favoris</button></div></div>
+ <form id="menuEditorForm" onsubmit="saveMenuEditor(event)">
+ <div class="card"><h2>Mon menu de base</h2><p class="note">Ces modifications s’appliquent au menu prévu. Ton historique reste inchangé. Les apports ci-dessous sont ceux du repas entier : ajuste-les si tu changes un aliment. Un nom ou une quantité ne suffit pas à calculer sa composition.</p><div id="menuEditorRows"></div>
+ <button type="button" class="secondary" onclick="addMenuDraft()">+ Ajouter un repas</button></div>
+ <div class="card editor-save"><button class="primary" type="submit">Enregistrer mon menu</button><button class="secondary" type="button" onclick="leaveMenuEditor()">Annuler</button><button class="danger" type="button" onclick="resetMenuDraft()">Rétablir le menu de base</button><p id="menuEditorFeedback" role="status" class="note"></p></div></form>
+ </section>
 </main>
 
 <nav>
@@ -380,11 +390,63 @@
 </nav>
 
 <script>
+
+function validateMenu(value){
+ if(!Array.isArray(value)||value.length>20)throw Error('Maximum 20 repas.');
+ const ids=new Set();
+ return value.map(m=>{
+  if(!m||typeof m.id!=='string'||!/^[a-zA-Z0-9_-]{1,80}$/.test(m.id)||ids.has(m.id))throw Error('Identifiant de repas invalide.');ids.add(m.id);
+  if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120||typeof m.time!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(m.time))throw Error('Vérifie les noms et horaires.');
+  if(!Array.isArray(m.items)||!m.items.length||m.items.length>40||m.items.some(i=>typeof i!=='string'||!i.trim()||i.length>160))throw Error('Ajoute entre 1 et 40 aliments par repas (160 caractères maximum).');
+  const macros={};for(const k of ['kcal','p','c','f']){const v=m.macros?.[k];if(typeof v!=='number'||!Number.isFinite(v)||v<0||v>(k==='kcal'?10000:1000))throw Error('Vérifie les apports du repas.');macros[k]=v;}
+  const category=['Petit-déjeuner','Déjeuner','Dîner','Collation'].includes(m.category)?m.category:({breakfast:'Petit-déjeuner',lunch:'Déjeuner',dinner:'Dîner'}[m.id]||'Collation');
+  return {id:m.id,name:m.name.trim(),time:m.time,items:m.items.map(x=>x.trim()),macros,category};
+ });
+}
+function menuSnapshot(m){
+ return {id:'plan_'+m.id,name:m.name,basis:'portion',quantity:1,condition:'Prêt à consommer',meal:m.category||({breakfast:'Petit-déjeuner',lunch:'Déjeuner',dinner:'Dîner'}[m.id]||'Collation'),values:{...m.macros}};
+}
+function migrateMenuHistory(target){
+ for(const d of Object.values(target.journal||{})){
+  for(const m of defaultMeals)if(d.done?.[m.id]&&!d.entries.some(e=>e.id==='plan_'+m.id))d.entries.push(menuSnapshot(m));
+  d.done={};
+ }
+}
+function mealIsDone(id){return day().entries.some(e=>e.id==='plan_'+id)||!!day().done[id];}
+let menuDraft=[];
+function openMenuEditor(){menuDraft=validateMenu(meals);renderMenuEditor();activateScreen('menuEditor');}
+function captureMenuDraft(){
+ document.querySelectorAll('.menu-edit-row').forEach((row,i)=>{
+  const read=k=>row.querySelector('[data-field="'+k+'"]').value;
+  menuDraft[i]={...menuDraft[i],name:read('name'),time:read('time'),category:read('category'),items:read('items').split('\n').map(x=>x.trim()).filter(Boolean),macros:Object.fromEntries(['kcal','p','c','f'].map(k=>[k,read(k).trim()===''?NaN:Number(read(k))]))};
+ });
+}
+function renderMenuEditor(){
+ document.getElementById('menuEditorRows').innerHTML=menuDraft.map((m,i)=>`<fieldset class="menu-edit-row"><legend>Repas ${i+1}</legend>
+ <div class="split"><div><label>Nom du repas<input data-field="name" required maxlength="120" value="${escapeText(m.name)}"></label></div><div><label>Horaire<input type="time" data-field="time" required value="${escapeText(m.time)}"></label></div></div>
+ <label>Catégorie<select data-field="category">${['Petit-déjeuner','Déjeuner','Dîner','Collation'].map(c=>'<option '+(c===(m.category||({breakfast:'Petit-déjeuner',lunch:'Déjeuner',dinner:'Dîner'}[m.id]||'Collation'))?'selected':'')+'>'+c+'</option>').join('')}</select></label>
+ <label>Aliments et quantités — un par ligne<textarea data-field="items" required rows="6" placeholder="120 g poulet&#10;80 g pâtes complètes (sec)">${escapeText(m.items.join('\n'))}</textarea></label>
+ <p class="note">Commence chaque ligne par une quantité pour calculer les courses : « 120 g poulet », « 250 ml lait », « 2 œufs ».</p>
+ <div class="split">${[['kcal','Calories (kcal)'],['p','Protéines (g)'],['c','Glucides (g)'],['f','Lipides (g)']].map(([k,l])=>'<label>'+l+'<input data-field="'+k+'" type="number" min="0" max="'+(k==='kcal'?10000:1000)+'" step="0.1" required value="'+m.macros[k]+'"></label>').join('')}</div>
+ <div class="row"><button class="secondary" type="button" onclick="moveMenuDraft(${i},-1)" ${i===0?'disabled':''}>Monter</button><button class="secondary" type="button" onclick="moveMenuDraft(${i},1)" ${i===menuDraft.length-1?'disabled':''}>Descendre</button><button class="danger" type="button" onclick="removeMenuDraft(${i})">Supprimer le repas</button></div></fieldset>`).join('');
+}
+function addMenuDraft(){captureMenuDraft();if(menuDraft.length>=20){alert('Maximum 20 repas.');return;}menuDraft.push({id:crypto.randomUUID(),name:'Nouveau repas',time:'12:00',category:'Déjeuner',items:['100 g aliment'],macros:{kcal:0,p:0,c:0,f:0}});renderMenuEditor();}
+function moveMenuDraft(i,delta){captureMenuDraft();const j=i+delta;if(j<0||j>=menuDraft.length)return;[menuDraft[i],menuDraft[j]]=[menuDraft[j],menuDraft[i]];renderMenuEditor();}
+function removeMenuDraft(i){captureMenuDraft();if(confirm('Retirer ce repas du menu prévu ? Ton historique est conservé.')){menuDraft.splice(i,1);renderMenuEditor();}}
+function resetMenuDraft(){if(confirm('Remplacer le brouillon par le menu de base ? Enregistre ensuite pour appliquer.')){menuDraft=JSON.parse(JSON.stringify(defaultMeals));renderMenuEditor();}}
+function leaveMenuEditor(){activateScreen('today');}
+function saveMenuEditor(event){
+ event.preventDefault();captureMenuDraft();
+ try{const next=validateMenu(menuDraft),previous=state.customMenu;state.customMenu=next;if(!save()){state.customMenu=previous;return;}meals=next;menuDraft=JSON.parse(JSON.stringify(next));renderAll();activateScreen('today');}
+ catch(e){document.getElementById('menuEditorFeedback').textContent=e.message;}
+}
+
 function appIcon(name){
   const paths={home:'<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/>',swap:'<path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/>',prep:'<rect x="4" y="6" width="16" height="15" rx="3"/><path d="M8 3v6m8-6v6M4 12h16"/>',cart:'<path d="M3 3h2l3 13h10l3-9H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/>',chart:'<path d="M4 3v17h17M7 14l5-5 4 3 5-7"/>',plus:'<path d="M12 5v14M5 12h14"/>',sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/>',bowl:'<path d="M3 10h18a9 9 0 0 1-18 0ZM7 21h10M9 3v3m6-3v3"/>',moon:'<path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z"/>',leaf:'<path d="M20 3c0 12-4 18-12 16C0 14 5 3 20 3ZM6 20 16 8"/>'};
   return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name]||paths.bowl}</svg>`;
 }
 function activateScreen(id){
+  if(id!=='menuEditor'&&document.getElementById('menuEditor')?.classList.contains('active')){captureMenuDraft();if(JSON.stringify(menuDraft)!==JSON.stringify(validateMenu(meals))&&!confirm('Quitter sans enregistrer les modifications ?'))return;}
   document.querySelectorAll('.screen').forEach(el=>el.classList.toggle('active',el.id===id));
   document.querySelectorAll('nav button').forEach(el=>{el.classList.toggle('active',el.dataset.screen===id);el.setAttribute('aria-current',el.dataset.screen===id?'page':'false');});
   window.scrollTo({top:0,behavior:'instant'});
@@ -420,7 +482,7 @@ function setupDesign(){
   document.querySelectorAll('nav button').forEach(btn=>{const [icon,label]=navItems[btn.dataset.screen];btn.innerHTML=appIcon(icon)+`<span>${label}</span>`;btn.addEventListener('click',()=>activateScreen(btn.dataset.screen));});
 }
 
-const meals = [
+const defaultMeals = [
   {
     id:"breakfast", time:"07:00", name:"Petit-déjeuner",
     items:["5 œufs cuits, à manger à côté","1 banane","250 ml lait demi-écrémé","1 orange","1 citron pressé","30 g miel"],
@@ -524,6 +586,7 @@ function useEquivalent(id,quantity) {
   openFoodEditor();document.getElementById("foodName").focus();
 }
 
+let meals=JSON.parse(JSON.stringify(defaultMeals));
 const targetMacros = {p:170,c:360,f:70};
 let state;
 try { state = JSON.parse(localStorage.getItem("masseState") || "{}"); } catch { state = {}; }
@@ -539,6 +602,8 @@ function localDate(d=new Date()) { return `${d.getFullYear()}-${String(d.getMont
 let selectedDate = localDate();
 let editingId = null;
 state.journal = state.journal || {};
+if(state.customMenu){try{meals=validateMenu(state.customMenu);}catch{delete state.customMenu;}}
+migrateMenuHistory(state);
 // Preserve undated legacy checkmarks without assigning them to an invented date.
 if (!state.journalVersion) { state.legacyDone = {...state.done}; state.journalVersion = 1; }
 function day() { return state.journal[selectedDate] || {entries:[],done:{}}; }
@@ -599,7 +664,7 @@ function editEntry(index) {
 }
 function deleteEntry(index) {
   if (!confirm("Supprimer cet aliment du journal ?")) return;
-  writableDay().entries.splice(index,1);save();resetFoodForm();renderJournal();renderProgress();
+  writableDay().entries.splice(index,1);save();resetFoodForm();renderMeals();renderJournal();renderProgress();
 }
 function addFood(event) {
   event.preventDefault();const form=document.getElementById("foodForm");if(!form.reportValidity())return;
@@ -610,27 +675,32 @@ function addFood(event) {
   const e={id:editingId||crypto.randomUUID(),name,quantity,basis:get("foodBasis"),meal:get("foodMeal"),condition:get("foodCondition"),values};
   const entries=writableDay().entries,index=entries.findIndex(x=>x.id===editingId);
   if(index>=0)entries[index]=e;else entries.push(e);
-  const saved=save();resetFoodForm();renderJournal();renderProgress();document.getElementById("foodFeedback").textContent=saved ? "Enregistré pour le "+selectedDate+"." : "Non sauvegardé sur cet appareil.";if(saved)activateScreen("today");
+  const saved=save();resetFoodForm();renderMeals();renderJournal();renderProgress();document.getElementById("foodFeedback").textContent=saved ? "Enregistré pour le "+selectedDate+"." : "Non sauvegardé sur cet appareil.";if(saved)activateScreen("today");
 }
 
 function renderMeals(){
   const totals=meals.reduce((acc,m)=>{for(const k of ['kcal','p','c','f'])acc[k]+=m.macros[k];return acc;},{kcal:0,p:0,c:0,f:0});
-  const completed=meals.filter(m=>day().done[m.id]).length;
+  const completed=meals.filter(m=>mealIsDone(m.id)).length;
   document.getElementById('menuTotals').innerHTML=`<div><span class="small muted">Total prévu · estimé</span><strong>${totals.kcal.toLocaleString('fr-FR')} kcal</strong></div><div><span class="small muted">Protéines</span><strong>${totals.p} g</strong></div><div><span class="small muted">Glucides</span><strong>${totals.c} g</strong></div><div><span class="small muted">Lipides</span><strong>${totals.f} g</strong></div><p class="note menu-status" role="status">${completed} / ${meals.length} repas validés pour cette journée · Horaires indicatifs</p>`;
   document.getElementById('meals').innerHTML=meals.map(m=>{
-    const done=!!day().done[m.id];
+    const done=mealIsDone(m.id);
     return `<article class="planned-meal ${done?'is-eaten':''}">
-      <div class="row"><span class="meal-time">${m.time}</span><span class="pill">${done?'Mangé':'À manger'}</span></div>
-      <h3>${m.name}</h3>
+      <div class="row"><span class="meal-time">${escapeText(m.time)}</span><span class="pill">${done?'Mangé':'À manger'}</span></div>
+      <h3>${escapeText(m.name)}</h3>
       <ul class="menu-ingredients">${m.items.map(item=>`<li>${escapeText(item)}</li>`).join('')}</ul>
       <div class="menu-nutrients"><strong>${m.macros.kcal} <span>kcal</span></strong><span>Protéines <b>${m.macros.p} g</b></span><span>Glucides <b>${m.macros.c} g</b></span><span>Lipides <b>${m.macros.f} g</b></span></div>
-      <button type="button" class="${done?'secondary':'primary'}" aria-pressed="${done}" aria-label="${done?'Retirer du journal :':'J’ai mangé ce repas :'} ${m.name}" onclick="toggleMeal('${m.id}')">${done?'✓ Mangé · Annuler':'J’ai mangé ce repas'}</button>
+      <button type="button" class="${done?'secondary':'primary'}" aria-pressed="${done}" aria-label="${done?'Retirer du journal :':'J’ai mangé ce repas :'} ${escapeText(m.name)}" onclick="toggleMeal('${m.id}')">${done?'✓ Mangé · Annuler':'J’ai mangé ce repas'}</button>
     </article>`;
   }).join('');
   renderProgress();
 }
 
-function toggleMeal(id){ const d=writableDay();d.done[id]=!d.done[id]; save(); renderMeals(); renderJournal(); }
+function toggleMeal(id){
+ const m=meals.find(m=>m.id===id);if(!m)return;const previous=JSON.parse(JSON.stringify(state.journal)),d=writableDay();
+ const index=d.entries.findIndex(e=>e.id==='plan_'+id);
+ if(index>=0)d.entries.splice(index,1);else d.entries.push(menuSnapshot(m));
+ d.done[id]=false;if(!save())state.journal=previous;renderMeals();renderJournal();
+}
 
 function renderProgress(){
   const totals = dailyTotals();
@@ -645,51 +715,27 @@ function renderProgress(){
   updateDesign();
 }
 
+function menuShopping(days){
+ const collected=new Map();
+ for(const m of meals)for(const line of m.items){
+   const match=line.match(/^(\d+(?:[.,]\d+)?)\s*(kg|g|ml|cl|l)?\s+(.+)$/i);
+   const quantity=match?Number(match[1].replace(',','.')):1,unit=match?(match[2]||'pièce(s)'):'portion(s)',name=match?match[3]:line;
+   const key=name+'|'+unit;
+   if(!collected.has(key))collected.set(key,{name,unit,quantity:0});
+   collected.get(key).quantity+=quantity*days;
+ }
+ return [...collected.values()];
+}
 function renderPrep(){
-  const d = Number(document.getElementById("prepDays").value);
-  const totals = [
-    [`Poulet/dinde`, (120+100)*d, "g cru"],
-    [`Bœuf (bavette/rumsteck/filet)`, 150*d, "g cru"],
-    [`Pâtes complètes`, 80*d, "g sec"],
-    [`Riz`, 70*d, "g sec"],
-    [`Riz ou pâtes du dîner`, 70*d, "g sec"],
-    [`Légumes`, 400*d, "g"],
-    [`Huile d’olive`, 15*d, "g"],
-    [`Pommes`, 1*d, ""],
-    [`Bananes hors shaker`, 2*d, ""]
-  ];
-  document.getElementById("prepOutput").innerHTML =
-    `<h3>À préparer pour ${d} jour${d>1?"s":""}</h3>`+
-    totals.map(x=>`<div class="row" style="padding:6px 0"><span>${x[0]}</span><b>${x[1]} ${x[2]}</b></div>`).join("");
-  renderShopping(d);
+ const d=Number(document.getElementById('prepDays').value);
+ document.getElementById('prepOutput').innerHTML='<h3>Ton menu pour '+d+' jour(s)</h3><p class="note">Quantités calculées depuis ton menu personnalisé.</p>'+menuShopping(d).map(x=>'<div class="row" style="padding:8px 0"><span>'+escapeText(x.name)+'</span><b>'+nutritionNumber(x.quantity)+' '+escapeText(x.unit)+'</b></div>').join('');
+ renderShopping(d);
 }
-
 function renderShopping(days=3){
-  const items = [
-    ["Œufs",5*days,""],
-    ["Bananes",3*days,""],
-    ["Lait demi-écrémé",250*days,"ml"],
-    ["Oranges",days,""],
-    ["Citrons",days,""],
-    ["Miel",30*days,"g"],
-    ["Skyr",150*days,"g"],
-    ["Amandes",10*days,"g"],
-    ["Poulet/dinde",220*days,"g"],
-    ["Bœuf",150*days,"g"],
-    ["Pâtes complètes",80*days,"g sec"],
-    ["Riz",140*days,"g sec"],
-    ["Légumes",400*days,"g"],
-    ["Huile d’olive",15*days,"g"],
-    ["Pommes",days,""]
-  ];
-  localStorage.setItem("masseShoppingDays",String(days));
-  document.getElementById("shoppingList").innerHTML = items.map((it,i)=>{
-    const key = it[0];
-    const checked = !!state.shopping[key];
-    return `<label class="shopping-item"><input type="checkbox" ${checked?"checked":""} onchange="toggleShopping('${key}',this.checked)">
-      <span style="flex:1">${it[0]}</span><b>${it[1]} ${it[2]}</b></label>`;
-  }).join("");
+ const items=menuShopping(days);localStorage.setItem('masseShoppingDays',String(days));
+ document.getElementById('shoppingList').innerHTML=items.map((it,i)=>'<label class="shopping-item"><input type="checkbox" '+(state.shopping[it.name]?'checked':'')+' onchange="toggleMenuShopping('+i+',this.checked,'+days+')"><span style="flex:1">'+escapeText(it.name)+'</span><b>'+nutritionNumber(it.quantity)+' '+escapeText(it.unit)+'</b></label>').join('');
 }
+function toggleMenuShopping(index,value,days){const item=menuShopping(days)[index];if(item)toggleShopping(item.name,value);}
 function toggleShopping(k,v){ state.shopping[k]=v; save(); }
 function resetShopping(){ state.shopping={}; save(); renderShopping(Number(localStorage.getItem("masseShoppingDays")||3)); }
 
@@ -767,7 +813,7 @@ function validateBackup(payload){
     const f=food(e);if(!['Petit-déjeuner','Déjeuner','Dîner','Collation'].includes(e.meal))fail();
     return {...f,quantity:num(e.quantity,.001,10000),meal:e.meal,...(withId?{id:str(e.id)}:{})};
   };
-  const done=d=>{if(!object(d))fail();const out={};for(const m of meals)if(d[m.id]!==undefined){if(typeof d[m.id]!=='boolean')fail();out[m.id]=d[m.id];}return out;};
+  const done=d=>{if(!object(d))fail();const out={};for(const m of defaultMeals)if(d[m.id]!==undefined){if(typeof d[m.id]!=='boolean')fail();out[m.id]=d[m.id];}return out;};
   const out={journalVersion:1,journal:{},weights:[],favorites:[],savedMeals:[],done:{},shopping:{},settings:{}};
   for(const [key,min,max,fallback] of [['goalWeight',40,200,80],['kcalTarget',500,10000,2800],['proteinTarget',1,1000,170],['carbTarget',1,2000,360],['fatTarget',1,1000,70]])out.settings[key]=num(input.settings[key]??fallback,min,max);
   if(Object.keys(input.journal).length>10000)fail();
@@ -776,8 +822,10 @@ function validateBackup(payload){
   if(new Set(out.weights.map(w=>w.date)).size!==out.weights.length)fail();
   out.favorites=array(input.favorites||[]).map(food);
   out.savedMeals=array(input.savedMeals||[]).map(m=>{if(!object(m))fail();const entries=array(m.entries).map(e=>entry(e,false));if(!entries.length)fail();return {name:str(m.name),entries};});
-  if(object(input.shopping))for(const key of ['Œufs','Bananes','Lait demi-écrémé','Oranges','Citrons','Miel','Skyr','Amandes','Poulet/dinde','Bœuf','Pâtes complètes','Riz','Légumes','Huile d’olive','Pommes'])if(typeof input.shopping[key]==='boolean')out.shopping[key]=input.shopping[key];
+  if(object(input.shopping))for(const key of Object.keys(input.shopping).filter(k=>k.length<=160&&!['__proto__','constructor','prototype'].includes(k)))if(typeof input.shopping[key]==='boolean')out.shopping[key]=input.shopping[key];
   if(input.legacyDone)out.legacyDone=done(input.legacyDone);
+  if(input.customMenu)out.customMenu=validateMenu(input.customMenu);
+  migrateMenuHistory(out);
   return out;
 }
 async function importBackup(input){
@@ -787,7 +835,7 @@ async function importBackup(input){
     const candidate=validateBackup(JSON.parse(await file.text()));
     if(!confirm(`Restaurer ${Object.keys(candidate.journal).length} journée(s) et ${candidate.weights.length} pesée(s) ? Cela remplacera toutes les données actuelles de cet appareil. Exporte-les d’abord si tu veux les conserver.`)){feedback.textContent='Restauration annulée.';return;}
     const previous=state;state=candidate;if(!save()){state=previous;throw Error('Stockage indisponible : restauration annulée.');}
-    resetFoodForm();renderAll();feedback.textContent='Sauvegarde restaurée.';
+    meals=JSON.parse(JSON.stringify(state.customMenu||defaultMeals));resetFoodForm();renderAll();feedback.textContent='Sauvegarde restaurée.';
   }catch(e){feedback.textContent=e instanceof SyntaxError?'Fichier JSON illisible. Aucune donnée modifiée.':e.message;}
   finally{input.value='';}
 }
@@ -834,14 +882,6 @@ function renderAll(){
   renderQuickLists();renderMeals(); renderJournal(); renderPrep(); renderWeight();
 }
 
-document.querySelectorAll("nav button").forEach(btn=>{
-  btn.addEventListener("click",()=>{
-    document.querySelectorAll("nav button").forEach(b=>b.classList.remove("active"));
-    btn.classList.add("active");
-    document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
-    document.getElementById(btn.dataset.screen).classList.add("active");
-  });
-});
 
 if("serviceWorker" in navigator){
   window.addEventListener("load", async () => {
