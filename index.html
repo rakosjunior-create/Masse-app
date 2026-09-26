@@ -178,6 +178,7 @@
     @media(max-width:600px){.menu-grid{grid-template-columns:1fr}.menu-totals{gap:12px 8px;padding:16px}.menu-totals strong{font-size:17px}.menu-totals .small{font-size:10px}.planned-meal{padding:20px}.menu-heading h2{font-size:23px}}
 
 .menu-edit-row{border:1px solid var(--line);border-radius:16px;padding:18px;margin:20px 0}.menu-edit-row legend{font-weight:700;padding:0 8px}.menu-edit-row textarea{width:100%;font:inherit;font-size:16px;line-height:1.6;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);resize:vertical}.editor-save{display:flex;flex-wrap:wrap;gap:10px}.editor-save .note{width:100%}button:disabled{opacity:.45;cursor:not-allowed}
+.ingredient-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(90px,.7fr) auto auto;gap:8px;align-items:end;padding:10px 0;border-bottom:1px solid var(--line)}.ingredient-row label{margin:0}.ingredient-unit{padding:14px 0}.ingredient-row button{min-width:44px}.auto-macros{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;background:var(--card2);border-radius:14px;padding:14px;margin:14px 0}.auto-macros span{text-align:center;font-size:12px}.auto-macros b{font-size:16px}.custom-food{padding:12px 0;border-top:1px solid var(--line)}.custom-food small{display:block;color:var(--muted);margin-top:4px}@media(max-width:600px){.ingredient-row{grid-template-columns:1fr 90px auto}.ingredient-row label:first-child{grid-column:1/-1}.auto-macros{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -373,9 +374,9 @@
  <div class="page-heading"><div><div class="eyebrow">À TA FAÇON</div><h1>Personnaliser.</h1><p>Ton menu, tes horaires, tes quantités.</p></div><button class="secondary" onclick="leaveMenuEditor()">Retour</button></div>
  <div class="card"><h2>Mes réglages</h2><div class="row"><button class="secondary" onclick="activateScreen('weight')">Poids, objectifs et sauvegardes</button><button class="secondary" onclick="openFoodEditor()">Aliments et favoris</button></div></div>
  <form id="menuEditorForm" onsubmit="saveMenuEditor(event)">
- <div class="card"><h2>Mon menu de base</h2><p class="note">Ces modifications s’appliquent au menu prévu. Ton historique reste inchangé. Les apports ci-dessous sont ceux du repas entier : ajuste-les si tu changes un aliment. Un nom ou une quantité ne suffit pas à calculer sa composition.</p><div id="menuEditorRows"></div>
+ <div class="card"><h2>Mon menu de base</h2><p class="note">Choisis les aliments et les quantités : les calories et macros se recalculent automatiquement. Ton historique reste inchangé.</p><div id="menuEditorRows"></div>
  <button type="button" class="secondary" onclick="addMenuDraft()">+ Ajouter un repas</button></div>
- <div class="card editor-save"><button class="primary" type="submit">Enregistrer mon menu</button><button class="secondary" type="button" onclick="leaveMenuEditor()">Annuler</button><button class="danger" type="button" onclick="resetMenuDraft()">Rétablir le menu de base</button><p id="menuEditorFeedback" role="status" class="note"></p></div></form>
+ <div class="card editor-save"><button class="primary" type="submit">Enregistrer mon menu</button><button class="secondary" type="button" onclick="leaveMenuEditor()">Annuler</button><button class="danger" type="button" onclick="resetMenuDraft()">Rétablir le menu de base</button><p id="menuEditorFeedback" role="status" class="note"></p></div></form><div class="card"><h2>Mes aliments personnalisés</h2><p class="note">Pour un aliment absent, recopie une seule fois les valeurs de son emballage pour 100 g ou 100 ml.</p><form onsubmit="saveCustomFood(event)"><div class="split"><label>Nom<input id="customFoodName" required maxlength="120"></label><label>Unité<select id="customFoodUnit"><option value="g">Grammes</option><option value="ml">Millilitres</option></select></label></div><label>État<select id="customFoodCondition"><option>Cru / sec</option><option>Cuit</option><option>Prêt à consommer</option></select></label><div class="split"><label>Calories<input id="customFoodKcal" type="number" min="0" step="0.1" required></label><label>Protéines<input id="customFoodP" type="number" min="0" step="0.1" required></label><label>Glucides<input id="customFoodC" type="number" min="0" step="0.1" required></label><label>Lipides<input id="customFoodF" type="number" min="0" step="0.1" required></label></div><button class="primary" type="submit">Ajouter à ma base</button></form><div id="customFoodList"></div></div>
  </section>
 </main>
 
@@ -391,55 +392,44 @@
 
 <script>
 
+function foodCatalog(){return [...baseFoodCatalog,...state.customFoods];}
+function foodById(id){return foodCatalog().find(f=>f.id===id);}
+function ingredientMacros(item){const food=foodById(item.foodId);if(!food)return {kcal:0,p:0,c:0,f:0};const factor=item.unit==='piece'?item.quantity*(food.gramsPerPiece||100)/100:item.quantity/100;return Object.fromEntries(['kcal','p','c','f'].map(k=>[k,food.values[k]*factor]));}
+function mealMacros(m){return m.ingredients.reduce((a,item)=>{const v=ingredientMacros(item);for(const k of ['kcal','p','c','f'])a[k]+=v[k];return a;},{kcal:0,p:0,c:0,f:0});}
+function ingredientLabel(item){const food=foodById(item.foodId);if(!food)return 'Aliment indisponible';const unit=item.unit==='piece'?(item.quantity>1?' pièces':' pièce'):(item.unit==='ml'?' ml':' g');return nutritionNumber(item.quantity)+unit+' '+food.name+(food.condition?' · '+food.condition:'');}
+function legacyIngredient(line){const s=String(line).toLowerCase(),number=Number((s.match(/\d+(?:[.,]\d+)?/)||['1'])[0].replace(',','.'));let foodId=null,unit=s.includes('ml')?'ml':s.match(/œuf|banane|orange|citron|pomme(?! de terre)/)?'piece':'g';
+ const rules=[['œuf','egg'],['lait','milk'],['skyr','skyr'],['miel','honey'],['amande','almond'],['banane','banana'],['orange','orange'],['citron','lemon'],['pomme','apple'],['poulet','chicken'],['dinde','turkey'],['pâtes complètes','wholepastadry'],['riz','ricedry'],['légume','broccoli'],['huile','olive'],['bavette','beef'],['rumsteck','beef'],['filet','beef']];for(const [word,id] of rules)if(s.includes(word)){foodId=id;break;}return foodId?{id:crypto.randomUUID(),foodId,quantity:number,unit}:null;}
 function validateMenu(value){
- if(!Array.isArray(value)||value.length>20)throw Error('Maximum 20 repas.');
- const ids=new Set();
- return value.map(m=>{
-  if(!m||typeof m.id!=='string'||!/^[a-zA-Z0-9_-]{1,80}$/.test(m.id)||ids.has(m.id))throw Error('Identifiant de repas invalide.');ids.add(m.id);
+ if(!Array.isArray(value)||!value.length||value.length>20)throw Error('Le menu doit contenir entre 1 et 20 repas.');const ids=new Set();
+ return value.map(m=>{if(!m||typeof m.id!=='string'||!/^[a-zA-Z0-9_-]{1,80}$/.test(m.id)||ids.has(m.id))throw Error('Identifiant de repas invalide.');ids.add(m.id);
   if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120||typeof m.time!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(m.time))throw Error('Vérifie les noms et horaires.');
-  if(!Array.isArray(m.items)||!m.items.length||m.items.length>40||m.items.some(i=>typeof i!=='string'||!i.trim()||i.length>160))throw Error('Ajoute entre 1 et 40 aliments par repas (160 caractères maximum).');
-  const macros={};for(const k of ['kcal','p','c','f']){const v=m.macros?.[k];if(typeof v!=='number'||!Number.isFinite(v)||v<0||v>(k==='kcal'?10000:1000))throw Error('Vérifie les apports du repas.');macros[k]=v;}
-  const category=['Petit-déjeuner','Déjeuner','Dîner','Collation'].includes(m.category)?m.category:({breakfast:'Petit-déjeuner',lunch:'Déjeuner',dinner:'Dîner'}[m.id]||'Collation');
-  return {id:m.id,name:m.name.trim(),time:m.time,items:m.items.map(x=>x.trim()),macros,category};
- });
+  const raw=Array.isArray(m.ingredients)?m.ingredients:(Array.isArray(m.items)?m.items.map(legacyIngredient).filter(Boolean):[]);if(!raw.length||raw.length>40)throw Error('Ajoute entre 1 et 40 aliments par repas.');
+  const ingredients=raw.map(x=>{if(!x||typeof x.foodId!=='string'||!foodById(x.foodId)||!['g','ml','piece'].includes(x.unit)||!Number.isFinite(Number(x.quantity))||Number(x.quantity)<=0||Number(x.quantity)>10000)throw Error('Vérifie les aliments et quantités.');return {id:typeof x.id==='string'?x.id:crypto.randomUUID(),foodId:x.foodId,quantity:Number(x.quantity),unit:x.unit};});
+  const category=['Petit-déjeuner','Déjeuner','Dîner','Collation'].includes(m.category)?m.category:({breakfast:'Petit-déjeuner',lunch:'Déjeuner',dinner:'Dîner'}[m.id]||'Collation');const out={id:m.id,name:m.name.trim(),time:m.time,category,ingredients};out.items=ingredients.map(ingredientLabel);out.macros=mealMacros(out);return out;});
 }
-function menuSnapshot(m){
- return {id:'plan_'+m.id,name:m.name,basis:'portion',quantity:1,condition:'Prêt à consommer',meal:m.category||({breakfast:'Petit-déjeuner',lunch:'Déjeuner',dinner:'Dîner'}[m.id]||'Collation'),values:{...m.macros}};
-}
-function migrateMenuHistory(target){
- for(const d of Object.values(target.journal||{})){
-  for(const m of defaultMeals)if(d.done?.[m.id]&&!d.entries.some(e=>e.id==='plan_'+m.id))d.entries.push(menuSnapshot(m));
-  d.done={};
- }
-}
+function menuSnapshot(m){return {id:'plan_'+m.id,name:m.name,basis:'portion',quantity:1,condition:'Prêt à consommer',meal:m.category,values:{...mealMacros(m)}};}
+function migrateMenuHistory(target){for(const d of Object.values(target.journal||{})){for(const m of defaultMeals)if(d.done?.[m.id]&&!d.entries.some(e=>e.id==='plan_'+m.id))d.entries.push({id:'plan_'+m.id,name:m.name,basis:'portion',quantity:1,condition:'Prêt à consommer',meal:m.category,values:{...mealMacros(m)}});d.done={};}}
 function mealIsDone(id){return day().entries.some(e=>e.id==='plan_'+id)||!!day().done[id];}
 let menuDraft=[];
 function openMenuEditor(){menuDraft=validateMenu(meals);renderMenuEditor();activateScreen('menuEditor');}
-function captureMenuDraft(){
- document.querySelectorAll('.menu-edit-row').forEach((row,i)=>{
-  const read=k=>row.querySelector('[data-field="'+k+'"]').value;
-  menuDraft[i]={...menuDraft[i],name:read('name'),time:read('time'),category:read('category'),items:read('items').split('\n').map(x=>x.trim()).filter(Boolean),macros:Object.fromEntries(['kcal','p','c','f'].map(k=>[k,read(k).trim()===''?NaN:Number(read(k))]))};
- });
-}
-function renderMenuEditor(){
- document.getElementById('menuEditorRows').innerHTML=menuDraft.map((m,i)=>`<fieldset class="menu-edit-row"><legend>Repas ${i+1}</legend>
- <div class="split"><div><label>Nom du repas<input data-field="name" required maxlength="120" value="${escapeText(m.name)}"></label></div><div><label>Horaire<input type="time" data-field="time" required value="${escapeText(m.time)}"></label></div></div>
- <label>Catégorie<select data-field="category">${['Petit-déjeuner','Déjeuner','Dîner','Collation'].map(c=>'<option '+(c===(m.category||({breakfast:'Petit-déjeuner',lunch:'Déjeuner',dinner:'Dîner'}[m.id]||'Collation'))?'selected':'')+'>'+c+'</option>').join('')}</select></label>
- <label>Aliments et quantités — un par ligne<textarea data-field="items" required rows="6" placeholder="120 g poulet&#10;80 g pâtes complètes (sec)">${escapeText(m.items.join('\n'))}</textarea></label>
- <p class="note">Commence chaque ligne par une quantité pour calculer les courses : « 120 g poulet », « 250 ml lait », « 2 œufs ».</p>
- <div class="split">${[['kcal','Calories (kcal)'],['p','Protéines (g)'],['c','Glucides (g)'],['f','Lipides (g)']].map(([k,l])=>'<label>'+l+'<input data-field="'+k+'" type="number" min="0" max="'+(k==='kcal'?10000:1000)+'" step="0.1" required value="'+m.macros[k]+'"></label>').join('')}</div>
- <div class="row"><button class="secondary" type="button" onclick="moveMenuDraft(${i},-1)" ${i===0?'disabled':''}>Monter</button><button class="secondary" type="button" onclick="moveMenuDraft(${i},1)" ${i===menuDraft.length-1?'disabled':''}>Descendre</button><button class="danger" type="button" onclick="removeMenuDraft(${i})">Supprimer le repas</button></div></fieldset>`).join('');
-}
-function addMenuDraft(){captureMenuDraft();if(menuDraft.length>=20){alert('Maximum 20 repas.');return;}menuDraft.push({id:crypto.randomUUID(),name:'Nouveau repas',time:'12:00',category:'Déjeuner',items:['100 g aliment'],macros:{kcal:0,p:0,c:0,f:0}});renderMenuEditor();}
+function captureMenuDraft(){document.querySelectorAll('.menu-edit-row').forEach((row,i)=>{const read=k=>row.querySelector('[data-field="'+k+'"]').value;menuDraft[i]={...menuDraft[i],name:read('name'),time:read('time'),category:read('category')};});}
+function foodOptions(selected){return foodCatalog().map(f=>'<option value="'+escapeText(f.id)+'" '+(f.id===selected?'selected':'')+'>'+escapeText(f.name)+' · '+escapeText(f.condition)+'</option>').join('');}
+function renderMenuEditor(){document.getElementById('menuEditorRows').innerHTML=menuDraft.map((m,i)=>{const macros=mealMacros(m);return `<fieldset class="menu-edit-row"><legend>Repas ${i+1}</legend><div class="split"><label>Nom du repas<input data-field="name" required maxlength="120" value="${escapeText(m.name)}"></label><label>Horaire<input type="time" data-field="time" required value="${escapeText(m.time)}"></label></div><label>Catégorie<select data-field="category">${['Petit-déjeuner','Déjeuner','Dîner','Collation'].map(c=>'<option '+(c===m.category?'selected':'')+'>'+c+'</option>').join('')}</select></label><h3>Aliments</h3><div class="ingredient-editor">${m.ingredients.map((item,j)=>ingredientEditorRow(i,j,item)).join('')}</div><button class="secondary" type="button" onclick="addIngredientDraft(${i})">+ Ajouter un aliment</button><div class="auto-macros"><span><b>${Math.round(macros.kcal)}</b> kcal</span><span>P <b>${nutritionNumber(macros.p)} g</b></span><span>G <b>${nutritionNumber(macros.c)} g</b></span><span>L <b>${nutritionNumber(macros.f)} g</b></span></div><div class="row"><button class="secondary" type="button" onclick="moveMenuDraft(${i},-1)" ${i===0?'disabled':''}>Monter</button><button class="secondary" type="button" onclick="moveMenuDraft(${i},1)" ${i===menuDraft.length-1?'disabled':''}>Descendre</button><button class="danger" type="button" onclick="removeMenuDraft(${i})">Supprimer le repas</button></div></fieldset>`;}).join('');renderCustomFoods();}
+function ingredientEditorRow(i,j,item){const f=foodById(item.foodId),unit=f?.unit==='piece'?'piece':f?.unit==='ml'?'ml':'g';item.unit=unit;return `<div class="ingredient-row"><label>Aliment<select aria-label="Aliment ${j+1}" onchange="changeIngredientFood(${i},${j},this.value)">${foodOptions(item.foodId)}</select></label><label>Quantité<input aria-label="Quantité aliment ${j+1}" type="number" min="0.1" max="10000" step="0.1" value="${item.quantity}" oninput="changeIngredientQuantity(${i},${j},this.value)"></label><span class="ingredient-unit">${unit==='piece'?'pièce(s)':unit}</span><button class="danger" type="button" aria-label="Supprimer cet aliment" onclick="removeIngredientDraft(${i},${j})">×</button></div>`;}
+function changeIngredientFood(i,j,id){captureMenuDraft();const f=foodById(id);if(!f)return;menuDraft[i].ingredients[j]={...menuDraft[i].ingredients[j],foodId:id,unit:f.unit,quantity:f.unit==='piece'?1:100};renderMenuEditor();}
+function changeIngredientQuantity(i,j,value){const n=Number(value);if(Number.isFinite(n)&&n>0)menuDraft[i].ingredients[j].quantity=n;const card=document.querySelectorAll('.menu-edit-row')[i],m=mealMacros(menuDraft[i]);card.querySelector('.auto-macros').innerHTML='<span><b>'+Math.round(m.kcal)+'</b> kcal</span><span>P <b>'+nutritionNumber(m.p)+' g</b></span><span>G <b>'+nutritionNumber(m.c)+' g</b></span><span>L <b>'+nutritionNumber(m.f)+' g</b></span>';}
+function addIngredientDraft(i){captureMenuDraft();menuDraft[i].ingredients.push({id:crypto.randomUUID(),foodId:'chicken',quantity:100,unit:'g'});renderMenuEditor();}
+function removeIngredientDraft(i,j){captureMenuDraft();if(menuDraft[i].ingredients.length===1){alert('Un repas doit contenir au moins un aliment.');return;}menuDraft[i].ingredients.splice(j,1);renderMenuEditor();}
+function addMenuDraft(){captureMenuDraft();if(menuDraft.length>=20){alert('Maximum 20 repas.');return;}menuDraft.push({id:crypto.randomUUID(),name:'Nouveau repas',time:'12:00',category:'Déjeuner',ingredients:[{id:crypto.randomUUID(),foodId:'chicken',quantity:100,unit:'g'}]});renderMenuEditor();}
 function moveMenuDraft(i,delta){captureMenuDraft();const j=i+delta;if(j<0||j>=menuDraft.length)return;[menuDraft[i],menuDraft[j]]=[menuDraft[j],menuDraft[i]];renderMenuEditor();}
 function removeMenuDraft(i){captureMenuDraft();if(confirm('Retirer ce repas du menu prévu ? Ton historique est conservé.')){menuDraft.splice(i,1);renderMenuEditor();}}
-function resetMenuDraft(){if(confirm('Remplacer le brouillon par le menu de base ? Enregistre ensuite pour appliquer.')){menuDraft=JSON.parse(JSON.stringify(defaultMeals));renderMenuEditor();}}
+function resetMenuDraft(){if(confirm('Remplacer le brouillon par le menu de base ? Enregistre ensuite pour appliquer.')){menuDraft=validateMenu(defaultMeals);renderMenuEditor();}}
 function leaveMenuEditor(){activateScreen('today');}
-function saveMenuEditor(event){
- event.preventDefault();captureMenuDraft();
- try{const next=validateMenu(menuDraft),previous=state.customMenu;state.customMenu=next;if(!save()){state.customMenu=previous;return;}meals=next;menuDraft=JSON.parse(JSON.stringify(next));renderAll();activateScreen('today');}
- catch(e){document.getElementById('menuEditorFeedback').textContent=e.message;}
-}
+function saveMenuEditor(event){event.preventDefault();captureMenuDraft();try{const next=validateMenu(menuDraft),previous=state.customMenu;state.customMenu=next;if(!save()){state.customMenu=previous;return;}meals=next;menuDraft=validateMenu(next);renderAll();activateScreen('today');}catch(e){document.getElementById('menuEditorFeedback').textContent=e.message;}}
+function renderCustomFoods(){const el=document.getElementById('customFoodList');if(!el)return;el.innerHTML=state.customFoods.length?state.customFoods.map((f,i)=>'<div class="row custom-food"><span><b>'+escapeText(f.name)+'</b><small>'+escapeText(f.condition)+' · '+f.values.kcal+' kcal/100 '+(f.unit==='ml'?'ml':'g')+'</small></span><button class="danger" type="button" onclick="deleteCustomFoodAt('+i+')">Supprimer</button></div>').join(''):'<p class="note">Aucun aliment personnalisé.</p>';}
+function saveCustomFood(event){event.preventDefault();const get=id=>document.getElementById(id).value,name=get('customFoodName').trim(),unit=get('customFoodUnit'),condition=get('customFoodCondition'),values={kcal:Number(get('customFoodKcal')),p:Number(get('customFoodP')),c:Number(get('customFoodC')),f:Number(get('customFoodF'))};if(!name||Object.values(values).some(v=>!Number.isFinite(v)||v<0)){alert('Vérifie le nom et les valeurs pour 100 g ou 100 ml.');return;}state.customFoods.push({id:'custom_'+crypto.randomUUID(),name,unit,condition,values});if(save()){event.target.reset();renderMenuEditor();}}
+function deleteCustomFood(id){if(menuDraft.some(m=>m.ingredients.some(x=>x.foodId===id))||meals.some(m=>m.ingredients.some(x=>x.foodId===id))){alert('Cet aliment est utilisé dans ton menu. Remplace-le avant de le supprimer.');return;}if(confirm('Supprimer cet aliment personnalisé ?')){state.customFoods=state.customFoods.filter(f=>f.id!==id);save();renderMenuEditor();}}
+function deleteCustomFoodAt(index){const food=state.customFoods[index];if(food)deleteCustomFood(food.id);}
 
 function appIcon(name){
   const paths={home:'<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/>',swap:'<path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/>',prep:'<rect x="4" y="6" width="16" height="15" rx="3"/><path d="M8 3v6m8-6v6M4 12h16"/>',cart:'<path d="M3 3h2l3 13h10l3-9H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/>',chart:'<path d="M4 3v17h17M7 14l5-5 4 3 5-7"/>',plus:'<path d="M12 5v14M5 12h14"/>',sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/>',bowl:'<path d="M3 10h18a9 9 0 0 1-18 0ZM7 21h10M9 3v3m6-3v3"/>',moon:'<path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z"/>',leaf:'<path d="M20 3c0 12-4 18-12 16C0 14 5 3 20 3ZM6 20 16 8"/>'};
@@ -483,33 +473,12 @@ function setupDesign(){
 }
 
 const defaultMeals = [
-  {
-    id:"breakfast", time:"07:00", name:"Petit-déjeuner",
-    items:["5 œufs cuits, à manger à côté","1 banane","250 ml lait demi-écrémé","1 orange","1 citron pressé","30 g miel"],
-    macros:{kcal:750,p:43,c:86,f:29}
-  },
-  {
-    id:"snack", time:"10:00", name:"Collation",
-    items:["150 g skyr","1 banane","10 g amandes"],
-    macros:{kcal:258,p:20,c:35,f:6}
-  },
-  {
-    id:"lunch", time:"13:00", name:"Déjeuner",
-    items:["120 g poulet/dinde","80 g pâtes complètes (sec)","200 g légumes","10 g huile d’olive","1 pomme"],
-    macros:{kcal:667,p:42,c:93,f:14}
-  },
-  {
-    id:"preworkout", time:"17:00", name:"Pré-entraînement",
-    items:["100 g poulet/dinde","70 g riz (cru/sec)","1 banane"],
-    macros:{kcal:467,p:29,c:83,f:2}
-  },
-  {
-    id:"dinner", time:"22:30", name:"Dîner post-entraînement",
-    items:["150 g bavette/rumsteck/filet","70 g riz ou pâtes (cru/sec)","200 g légumes","5 g huile d’olive"],
-    macros:{kcal:607,p:41,c:68,f:18}
-  }
-];
-
+ {id:'breakfast',time:'07:00',name:'Petit-déjeuner',category:'Petit-déjeuner',ingredients:[['egg',5,'piece'],['banana',1,'piece'],['milk',250,'ml'],['orange',1,'piece'],['lemon',1,'piece'],['honey',30,'g']]},
+ {id:'snack',time:'10:00',name:'Collation',category:'Collation',ingredients:[['skyr',150,'g'],['banana',1,'piece'],['almond',10,'g']]},
+ {id:'lunch',time:'13:00',name:'Déjeuner',category:'Déjeuner',ingredients:[['chicken',120,'g'],['wholepastadry',80,'g'],['broccoli',200,'g'],['olive',10,'g'],['apple',1,'piece']]},
+ {id:'preworkout',time:'17:00',name:'Pré-entraînement',category:'Collation',ingredients:[['chicken',100,'g'],['ricedry',70,'g'],['banana',1,'piece']]},
+ {id:'dinner',time:'22:30',name:'Dîner post-entraînement',category:'Dîner',ingredients:[['beef',150,'g'],['ricedry',70,'g'],['broccoli',200,'g'],['olive',5,'g']]}
+].map(m=>({...m,ingredients:m.ingredients.map(([foodId,quantity,unit])=>({id:crypto.randomUUID(),foodId,quantity,unit}))}));
 
 const foodPresets = {
   beef:{name:"Bavette d’aloyau",values:{kcal:133,p:20.4,c:0,f:5.67}},
@@ -545,6 +514,15 @@ function checkPresetCondition() {
 
 
 const equivalenceFoods=[{"id": "chicken", "name": "Filet de poulet sans peau", "condition": "Cru / sec", "group": "p", "values": {"kcal": 110, "p": 23.4, "c": 0, "f": 1.5}}, {"id": "beef", "name": "Bavette d’aloyau", "condition": "Cru / sec", "group": "p", "values": {"kcal": 133, "p": 20.4, "c": 0, "f": 5.67}}, {"id": "chickencooked", "name": "Filet de poulet sans peau, poêlé", "condition": "Cuit", "group": "p", "values": {"kcal": 138, "p": 30.1, "c": 0, "f": 2}}, {"id": "mince", "name": "Steak haché 5 % MG, cuit", "condition": "Cuit", "group": "p", "values": {"kcal": 155, "p": 25.5, "c": 0, "f": 5.9}}, {"id": "turkey", "name": "Dinde, viande rôtie", "condition": "Cuit", "group": "p", "values": {"kcal": 151, "p": 29.1, "c": 0, "f": 3.8}}, {"id": "cod", "name": "Cabillaud, au four", "condition": "Cuit", "group": "p", "values": {"kcal": 95, "p": 22.3, "c": 0, "f": 0.6}}, {"id": "tuna", "name": "Thon au naturel, égoutté", "condition": "Prêt à consommer", "group": "p", "values": {"kcal": 111, "p": 26.8, "c": 0, "f": 0.4}}, {"id": "salmon", "name": "Saumon, vapeur", "condition": "Cuit", "group": "p", "values": {"kcal": 196, "p": 23, "c": 0, "f": 11.5}}, {"id": "egg", "name": "Œuf dur, sans coquille", "condition": "Cuit", "group": "p", "values": {"kcal": 134, "p": 13.5, "c": 0.5, "f": 8.6}}, {"id": "rice", "name": "Riz blanc, cuit non salé", "condition": "Cuit", "group": "c", "values": {"kcal": 143, "p": 2.9, "c": 31.8, "f": 0.4}}, {"id": "brownrice", "name": "Riz complet, cuit non salé", "condition": "Cuit", "group": "c", "values": {"kcal": 152, "p": 3.2, "c": 32.6, "f": 1}}, {"id": "pasta", "name": "Pâtes standard, cuites non salées", "condition": "Cuit", "group": "c", "values": {"kcal": 121, "p": 4, "c": 25, "f": 0.6}}, {"id": "wholepasta", "name": "Pâtes complètes, cuites non salées", "condition": "Cuit", "group": "c", "values": {"kcal": 120, "p": 4.6, "c": 23.4, "f": 0.9}}, {"id": "potato", "name": "Pomme de terre, à l’eau", "condition": "Cuit", "group": "c", "values": {"kcal": 77, "p": 1.8, "c": 16.7, "f": 0.3}}, {"id": "sweetpotato", "name": "Patate douce, cuite", "condition": "Cuit", "group": "c", "values": {"kcal": 57, "p": 1.7, "c": 12.2, "f": 0.2}}, {"id": "quinoa", "name": "Quinoa, cuit non salé", "condition": "Cuit", "group": "c", "values": {"kcal": 140, "p": 4.7, "c": 27.9, "f": 1.1}}, {"id": "bread", "name": "Pain complet T150", "condition": "Prêt à consommer", "group": "c", "values": {"kcal": 227, "p": 8.4, "c": 44.3, "f": 1.8}}, {"id": "olive", "name": "Huile d’olive", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 900, "p": 0, "c": 0, "f": 99.9}}, {"id": "almond", "name": "Amandes avec peau", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 575, "p": 18.8, "c": 9.5, "f": 51.3}}, {"id": "walnut", "name": "Cerneaux de noix", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 686, "p": 13.3, "c": 6.9, "f": 67.3}}, {"id": "lin", "name": "Huile de lin", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 900, "p": 0, "c": 0, "f": 100}}, {"id": "wholepastadry", "name": "Pâtes complètes, sèches", "condition": "Cru / sec", "group": "c", "values": {"kcal": 338, "p": 12.6, "c": 60.6, "f": 2.5}}, {"id": "ricedry", "name": "Riz blanc, cru", "condition": "Cru / sec", "group": "c", "values": {"kcal": 348, "p": 7, "c": 78, "f": 0.9}}, {"id": "banana", "name": "Banane, sans peau", "condition": "Prêt à consommer", "group": "c", "values": {"kcal": 83, "p": 1.1, "c": 19.7, "f": 0}}, {"id": "apple", "name": "Pomme, partie comestible", "condition": "Prêt à consommer", "group": "c", "values": {"kcal": 50, "p": 0.3, "c": 11.6, "f": 0.3}}];
+const baseFoodCatalog=[...equivalenceFoods.map(f=>({...f,unit:'g'})),
+ {id:'milk',name:'Lait demi-écrémé',condition:'Prêt à consommer',unit:'ml',values:{kcal:46,p:3.2,c:4.8,f:1.6}},
+ {id:'skyr',name:'Skyr nature 0 %',condition:'Prêt à consommer',unit:'g',values:{kcal:57,p:10,c:3.9,f:.2}},
+ {id:'honey',name:'Miel',condition:'Prêt à consommer',unit:'g',values:{kcal:320,p:.5,c:80,f:.5}},
+ {id:'orange',name:'Orange, pulpe',condition:'Prêt à consommer',unit:'piece',gramsPerPiece:189,values:{kcal:45.5,p:.75,c:8.03,f:.2}},
+ {id:'lemon',name:'Citron pressé',condition:'Prêt à consommer',unit:'piece',gramsPerPiece:120,values:{kcal:27.6,p:.4,c:1.56,f:.3}},
+ {id:'broccoli',name:'Brocoli vapeur',condition:'Cuit',unit:'g',values:{kcal:37.6,p:4.13,c:2.53,f:.7}}
+].map(f=>f.id==='egg'?{...f,unit:'piece',gramsPerPiece:55}:f.id==='banana'?{...f,unit:'piece',gramsPerPiece:120}:f.id==='apple'?{...f,unit:'piece',gramsPerPiece:150}:f);
+
 function equivalenceOptions(macro,sourceId,quantity) {
   const source=equivalenceFoods.find(f=>f.id===sourceId && f.group===macro);
   if(!source || !Number.isFinite(quantity) || quantity<0.1 || quantity>10000) return [];
@@ -596,13 +574,13 @@ state.weights = state.weights || [];
 state.shopping = state.shopping || {};
 state.settings = state.settings || {goalWeight:80,kcalTarget:2800};
 state.settings.proteinTarget ||= 170;state.settings.carbTarget ||= 360;state.settings.fatTarget ||= 70;
-state.favorites = state.favorites || [];state.savedMeals = state.savedMeals || [];
+state.favorites = state.favorites || [];state.savedMeals = state.savedMeals || [];state.customFoods=Array.isArray(state.customFoods)?state.customFoods:[];
 
 function localDate(d=new Date()) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 let selectedDate = localDate();
 let editingId = null;
 state.journal = state.journal || {};
-if(state.customMenu){try{meals=validateMenu(state.customMenu);}catch{delete state.customMenu;}}
+if(state.customMenu){try{meals=validateMenu(state.customMenu);}catch{delete state.customMenu;}}else meals=validateMenu(defaultMeals);
 migrateMenuHistory(state);
 // Preserve undated legacy checkmarks without assigning them to an invented date.
 if (!state.journalVersion) { state.legacyDone = {...state.done}; state.journalVersion = 1; }
@@ -615,7 +593,7 @@ function save(){
 function escapeText(value) { return String(value).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function entryMacros(e) { const factor=e.basis==="100" ? e.quantity/100 : e.quantity; return Object.fromEntries(Object.entries(e.values).map(([k,v])=>[k,v*factor])); }
 function dailyTotals() {
-  return [...meals.filter(m=>day().done[m.id]).map(m=>m.macros),...day().entries.map(entryMacros)]
+  return [...meals.filter(m=>day().done[m.id]).map(mealMacros),...day().entries.map(entryMacros)]
     .reduce((a,m)=>{for (const k of ["kcal","p","c","f"]) a[k]+=m[k];return a;},{kcal:0,p:0,c:0,f:0});
 }
 function updateQuantityLabel() { document.getElementById("quantityLabel").textContent=document.getElementById("foodBasis").value==="100" ? "Quantité mangée (g)" : "Nombre de pièces / portions"; }
@@ -641,7 +619,7 @@ function journalGroups() {
   });
   const mealMap={breakfast:"Petit-déjeuner",snack:"Collation",lunch:"Déjeuner",preworkout:"Collation",dinner:"Dîner"};
   meals.filter(m=>day().done[m.id]).forEach(m=>{
-    groups[mealMap[m.id]||"Collation"].push({name:m.name,detail:"Menu de base · repas complet estimé",macros:m.macros,legacyId:m.id});
+    groups[m.category||mealMap[m.id]||"Collation"].push({name:m.name,detail:"Menu de base · repas complet calculé",macros:mealMacros(m),legacyId:m.id});
   });
   return order.map(name=>({name,rows:groups[name],total:groups[name].reduce((a,row)=>{for(const k of ["kcal","p","c","f"])a[k]+=row.macros[k];return a;},{kcal:0,p:0,c:0,f:0})}));
 }
@@ -679,16 +657,16 @@ function addFood(event) {
 }
 
 function renderMeals(){
-  const totals=meals.reduce((acc,m)=>{for(const k of ['kcal','p','c','f'])acc[k]+=m.macros[k];return acc;},{kcal:0,p:0,c:0,f:0});
+  const totals=meals.reduce((acc,m)=>{const v=mealMacros(m);for(const k of ['kcal','p','c','f'])acc[k]+=v[k];return acc;},{kcal:0,p:0,c:0,f:0});
   const completed=meals.filter(m=>mealIsDone(m.id)).length;
   document.getElementById('menuTotals').innerHTML=`<div><span class="small muted">Total prévu · estimé</span><strong>${totals.kcal.toLocaleString('fr-FR')} kcal</strong></div><div><span class="small muted">Protéines</span><strong>${totals.p} g</strong></div><div><span class="small muted">Glucides</span><strong>${totals.c} g</strong></div><div><span class="small muted">Lipides</span><strong>${totals.f} g</strong></div><p class="note menu-status" role="status">${completed} / ${meals.length} repas validés pour cette journée · Horaires indicatifs</p>`;
   document.getElementById('meals').innerHTML=meals.map(m=>{
-    const done=mealIsDone(m.id);
+    const done=mealIsDone(m.id),macros=mealMacros(m);
     return `<article class="planned-meal ${done?'is-eaten':''}">
       <div class="row"><span class="meal-time">${escapeText(m.time)}</span><span class="pill">${done?'Mangé':'À manger'}</span></div>
       <h3>${escapeText(m.name)}</h3>
-      <ul class="menu-ingredients">${m.items.map(item=>`<li>${escapeText(item)}</li>`).join('')}</ul>
-      <div class="menu-nutrients"><strong>${m.macros.kcal} <span>kcal</span></strong><span>Protéines <b>${m.macros.p} g</b></span><span>Glucides <b>${m.macros.c} g</b></span><span>Lipides <b>${m.macros.f} g</b></span></div>
+      <ul class="menu-ingredients">${m.ingredients.map(item=>`<li>${escapeText(ingredientLabel(item))}</li>`).join('')}</ul>
+      <div class="menu-nutrients"><strong>${macros.kcal} <span>kcal</span></strong><span>Protéines <b>${macros.p} g</b></span><span>Glucides <b>${macros.c} g</b></span><span>Lipides <b>${macros.f} g</b></span></div>
       <button type="button" class="${done?'secondary':'primary'}" aria-pressed="${done}" aria-label="${done?'Retirer du journal :':'J’ai mangé ce repas :'} ${escapeText(m.name)}" onclick="toggleMeal('${m.id}')">${done?'✓ Mangé · Annuler':'J’ai mangé ce repas'}</button>
     </article>`;
   }).join('');
@@ -715,17 +693,7 @@ function renderProgress(){
   updateDesign();
 }
 
-function menuShopping(days){
- const collected=new Map();
- for(const m of meals)for(const line of m.items){
-   const match=line.match(/^(\d+(?:[.,]\d+)?)\s*(kg|g|ml|cl|l)?\s+(.+)$/i);
-   const quantity=match?Number(match[1].replace(',','.')):1,unit=match?(match[2]||'pièce(s)'):'portion(s)',name=match?match[3]:line;
-   const key=name+'|'+unit;
-   if(!collected.has(key))collected.set(key,{name,unit,quantity:0});
-   collected.get(key).quantity+=quantity*days;
- }
- return [...collected.values()];
-}
+function menuShopping(days){const collected=new Map();for(const m of meals)for(const item of m.ingredients){const f=foodById(item.foodId);if(!f)continue;const key=f.id+'|'+item.unit;if(!collected.has(key))collected.set(key,{key,name:f.name,unit:item.unit,quantity:0});collected.get(key).quantity+=item.quantity*days;}return [...collected.values()];}
 function renderPrep(){
  const d=Number(document.getElementById('prepDays').value);
  document.getElementById('prepOutput').innerHTML='<h3>Ton menu pour '+d+' jour(s)</h3><p class="note">Quantités calculées depuis ton menu personnalisé.</p>'+menuShopping(d).map(x=>'<div class="row" style="padding:8px 0"><span>'+escapeText(x.name)+'</span><b>'+nutritionNumber(x.quantity)+' '+escapeText(x.unit)+'</b></div>').join('');
@@ -814,7 +782,7 @@ function validateBackup(payload){
     return {...f,quantity:num(e.quantity,.001,10000),meal:e.meal,...(withId?{id:str(e.id)}:{})};
   };
   const done=d=>{if(!object(d))fail();const out={};for(const m of defaultMeals)if(d[m.id]!==undefined){if(typeof d[m.id]!=='boolean')fail();out[m.id]=d[m.id];}return out;};
-  const out={journalVersion:1,journal:{},weights:[],favorites:[],savedMeals:[],done:{},shopping:{},settings:{}};
+  const out={journalVersion:1,journal:{},weights:[],favorites:[],savedMeals:[],customFoods:[],done:{},shopping:{},settings:{}};
   for(const [key,min,max,fallback] of [['goalWeight',40,200,80],['kcalTarget',500,10000,2800],['proteinTarget',1,1000,170],['carbTarget',1,2000,360],['fatTarget',1,1000,70]])out.settings[key]=num(input.settings[key]??fallback,min,max);
   if(Object.keys(input.journal).length>10000)fail();
   for(const [date,d] of Object.entries(input.journal)){if(!validDate(date)||!object(d))fail();const entries=array(d.entries).map(e=>entry(e));if(new Set(entries.map(e=>e.id)).size!==entries.length)fail();out.journal[date]={entries,done:done(d.done||{})};}
@@ -824,7 +792,7 @@ function validateBackup(payload){
   out.savedMeals=array(input.savedMeals||[]).map(m=>{if(!object(m))fail();const entries=array(m.entries).map(e=>entry(e,false));if(!entries.length)fail();return {name:str(m.name),entries};});
   if(object(input.shopping))for(const key of Object.keys(input.shopping).filter(k=>k.length<=160&&!['__proto__','constructor','prototype'].includes(k)))if(typeof input.shopping[key]==='boolean')out.shopping[key]=input.shopping[key];
   if(input.legacyDone)out.legacyDone=done(input.legacyDone);
-  if(input.customMenu)out.customMenu=validateMenu(input.customMenu);
+  if(Array.isArray(input.customFoods))out.customFoods=input.customFoods.map(f=>{if(!f||typeof f.id!=='string'||!f.id.startsWith('custom_')||typeof f.name!=='string'||!f.name.trim()||!['g','ml'].includes(f.unit)||!['Cru / sec','Cuit','Prêt à consommer'].includes(f.condition))fail();const values={};for(const k of ['kcal','p','c','f'])values[k]=num(f.values?.[k],0,k==='kcal'?10000:1000);return {id:f.id,name:f.name.trim().slice(0,120),unit:f.unit,condition:f.condition,values};});const previousCustomFoods=state.customFoods;try{state.customFoods=out.customFoods;if(input.customMenu)out.customMenu=validateMenu(input.customMenu);}finally{state.customFoods=previousCustomFoods;}
   migrateMenuHistory(out);
   return out;
 }
@@ -834,7 +802,7 @@ async function importBackup(input){
     if(file.size>5*1024*1024)throw Error('Fichier trop volumineux (maximum 5 Mo).');
     const candidate=validateBackup(JSON.parse(await file.text()));
     if(!confirm(`Restaurer ${Object.keys(candidate.journal).length} journée(s) et ${candidate.weights.length} pesée(s) ? Cela remplacera toutes les données actuelles de cet appareil. Exporte-les d’abord si tu veux les conserver.`)){feedback.textContent='Restauration annulée.';return;}
-    const previous=state;state=candidate;if(!save()){state=previous;throw Error('Stockage indisponible : restauration annulée.');}
+    const previous=state;state=candidate;meals=state.customMenu?validateMenu(state.customMenu):validateMenu(defaultMeals);if(!save()){state=previous;throw Error('Stockage indisponible : restauration annulée.');}
     meals=JSON.parse(JSON.stringify(state.customMenu||defaultMeals));resetFoodForm();renderAll();feedback.textContent='Sauvegarde restaurée.';
   }catch(e){feedback.textContent=e instanceof SyntaxError?'Fichier JSON illisible. Aucune donnée modifiée.':e.message;}
   finally{input.value='';}
@@ -910,4 +878,5 @@ renderAll();
 </script>
 </body>
 </html>
+
 
