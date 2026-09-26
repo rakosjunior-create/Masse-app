@@ -659,14 +659,14 @@ function addFood(event) {
 function renderMeals(){
   const totals=meals.reduce((acc,m)=>{const v=mealMacros(m);for(const k of ['kcal','p','c','f'])acc[k]+=v[k];return acc;},{kcal:0,p:0,c:0,f:0});
   const completed=meals.filter(m=>mealIsDone(m.id)).length;
-  document.getElementById('menuTotals').innerHTML=`<div><span class="small muted">Total prévu · estimé</span><strong>${totals.kcal.toLocaleString('fr-FR')} kcal</strong></div><div><span class="small muted">Protéines</span><strong>${totals.p} g</strong></div><div><span class="small muted">Glucides</span><strong>${totals.c} g</strong></div><div><span class="small muted">Lipides</span><strong>${totals.f} g</strong></div><p class="note menu-status" role="status">${completed} / ${meals.length} repas validés pour cette journée · Horaires indicatifs</p>`;
+  document.getElementById('menuTotals').innerHTML=`<div><span class="small muted">Total prévu · estimé</span><strong>${Math.round(totals.kcal).toLocaleString('fr-FR')} kcal</strong></div><div><span class="small muted">Protéines</span><strong>${nutritionNumber(totals.p)} g</strong></div><div><span class="small muted">Glucides</span><strong>${nutritionNumber(totals.c)} g</strong></div><div><span class="small muted">Lipides</span><strong>${nutritionNumber(totals.f)} g</strong></div><p class="note menu-status" role="status">${completed} / ${meals.length} repas validés pour cette journée · Horaires indicatifs</p>`;
   document.getElementById('meals').innerHTML=meals.map(m=>{
     const done=mealIsDone(m.id),macros=mealMacros(m);
     return `<article class="planned-meal ${done?'is-eaten':''}">
       <div class="row"><span class="meal-time">${escapeText(m.time)}</span><span class="pill">${done?'Mangé':'À manger'}</span></div>
       <h3>${escapeText(m.name)}</h3>
       <ul class="menu-ingredients">${m.ingredients.map(item=>`<li>${escapeText(ingredientLabel(item))}</li>`).join('')}</ul>
-      <div class="menu-nutrients"><strong>${macros.kcal} <span>kcal</span></strong><span>Protéines <b>${macros.p} g</b></span><span>Glucides <b>${macros.c} g</b></span><span>Lipides <b>${macros.f} g</b></span></div>
+      <div class="menu-nutrients"><strong>${Math.round(macros.kcal)} <span>kcal</span></strong><span>Protéines <b>${nutritionNumber(macros.p)} g</b></span><span>Glucides <b>${nutritionNumber(macros.c)} g</b></span><span>Lipides <b>${nutritionNumber(macros.f)} g</b></span></div>
       <button type="button" class="${done?'secondary':'primary'}" aria-pressed="${done}" aria-label="${done?'Retirer du journal :':'J’ai mangé ce repas :'} ${escapeText(m.name)}" onclick="toggleMeal('${m.id}')">${done?'✓ Mangé · Annuler':'J’ai mangé ce repas'}</button>
     </article>`;
   }).join('');
@@ -878,5 +878,4 @@ renderAll();
 </script>
 </body>
 </html>
-
 
