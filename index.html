@@ -409,7 +409,7 @@ function validateMenu(value){
 }
 function menuSnapshot(m){return {id:'plan_'+m.id,name:m.name,basis:'portion',quantity:1,condition:'Prêt à consommer',meal:m.category,values:{...mealMacros(m)}};}
 function migrateMenuHistory(target){for(const d of Object.values(target.journal||{})){for(const m of defaultMeals)if(d.done?.[m.id]&&!d.entries.some(e=>e.id==='plan_'+m.id))d.entries.push({id:'plan_'+m.id,name:m.name,basis:'portion',quantity:1,condition:'Prêt à consommer',meal:m.category,values:{...mealMacros(m)}});d.done={};}}
-function mealIsDone(id){return day().entries.some(e=>e.id==='plan_'+id)||!!day().done[id];}
+function mealIsDone(id){return day().entries.some(e=>e.id==='plan_'+id||e.id.startsWith('plan_'+id+':'))||!!day().done[id];}
 let menuDraft=[];
 function openMenuEditor(){menuDraft=validateMenu(meals);renderMenuEditor();activateScreen('menuEditor');}
 function captureMenuDraft(){document.querySelectorAll('.menu-edit-row').forEach((row,i)=>{const read=k=>row.querySelector('[data-field="'+k+'"]').value;menuDraft[i]={...menuDraft[i],name:read('name'),time:read('time'),category:read('category')};});}
@@ -596,7 +596,7 @@ function dailyTotals() {
   return [...meals.filter(m=>day().done[m.id]).map(mealMacros),...day().entries.map(entryMacros)]
     .reduce((a,m)=>{for (const k of ["kcal","p","c","f"]) a[k]+=m[k];return a;},{kcal:0,p:0,c:0,f:0});
 }
-function updateQuantityLabel() { document.getElementById("quantityLabel").textContent=document.getElementById("foodBasis").value==="100" ? "Quantité mangée (g)" : "Nombre de pièces / portions"; }
+function updateQuantityLabel() { const entry=day().entries.find(e=>e.id===editingId);document.getElementById("quantityLabel").textContent=entry?.quantityUnit&&entry.basis===document.getElementById('foodBasis').value ? 'Quantité mangée ('+entry.quantityUnit+')' : document.getElementById("foodBasis").value==="100" ? "Quantité mangée (g)" : "Nombre de pièces / portions"; }
 function resetFoodForm() {
   editingId=null;document.getElementById("foodForm").reset();updateQuantityLabel();renderFoodPreview();
   document.getElementById("foodSubmit").textContent="Ajouter au journal";document.getElementById("cancelEdit").hidden=true;
@@ -615,7 +615,7 @@ function journalGroups() {
   const groups=Object.fromEntries(order.map(k=>[k,[]]));
   day().entries.forEach((e,index)=>{
     const key=order.includes(e.meal)?e.meal:"Collation";
-    groups[key].push({name:e.name,detail:`${e.quantity} ${e.basis==="100"?"g":"pièce(s) / portion(s)"} · ${e.condition}`,macros:entryMacros(e),index});
+    groups[key].push({name:e.name,detail:`${e.quantity} ${e.quantityUnit||(e.basis==="100"?"g":"pièce(s) / portion(s)")} · ${e.condition}`,macros:entryMacros(e),index});
   });
   const mealMap={breakfast:"Petit-déjeuner",snack:"Collation",lunch:"Déjeuner",preworkout:"Collation",dinner:"Dîner"};
   meals.filter(m=>day().done[m.id]).forEach(m=>{
@@ -623,7 +623,37 @@ function journalGroups() {
   });
   return order.map(name=>({name,rows:groups[name],total:groups[name].reduce((a,row)=>{for(const k of ["kcal","p","c","f"])a[k]+=row.macros[k];return a;},{kcal:0,p:0,c:0,f:0})}));
 }
+let actualMealId=null;
+function openActualMeal(id){
+ const meal=meals.find(m=>m.id===id);if(!meal)return;actualMealId=id;
+ let box=document.getElementById('actualMealDialog');if(!box){box=document.createElement('dialog');box.id='actualMealDialog';box.style.cssText='background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:24px;padding:24px;width:min(560px,90vw);max-height:85vh;overflow:auto';document.body.appendChild(box);}
+ box.innerHTML='<h2>'+escapeText(meal.name)+'</h2><p class="note">Uniquement pour cette journée. Ton menu de base reste inchangé. Mets 0 pour un aliment non mangé.</p><form id="actualMealForm">'+meal.ingredients.map((it,i)=>'<label style="display:block;margin:14px 0">'+escapeText(ingredientLabel(it))+'<input aria-label="Quantité mangée '+(i+1)+'" data-actual="'+i+'" type="number" min="0" max="10000" step="any" required value="'+it.quantity+'" oninput="previewActualMeal()"></label>').join('')+'<p id="actualMealTotals" role="status"></p><button class="primary" type="submit">Enregistrer ce que j’ai mangé</button><button class="secondary" type="button" onclick="document.getElementById(\'actualMealDialog\').close()">Annuler</button></form>';
+ document.getElementById('actualMealForm').onsubmit=saveActualMeal;previewActualMeal();box.showModal();
+}
+function actualIngredients(){const meal=meals.find(m=>m.id===actualMealId);return meal.ingredients.map((it,i)=>({...it,quantity:Number(document.querySelector('[data-actual="'+i+'"]').value)}));}
+function previewActualMeal(){const v=mealMacros({ingredients:actualIngredients()});document.getElementById('actualMealTotals').textContent=Math.round(v.kcal)+' kcal · P '+nutritionNumber(v.p)+' g · G '+nutritionNumber(v.c)+' g · L '+nutritionNumber(v.f)+' g';}
+function saveActualMeal(event){
+ event.preventDefault();if(!document.getElementById('actualMealForm').reportValidity())return;
+ const meal=meals.find(m=>m.id===actualMealId),items=actualIngredients();if(!items.some(it=>it.quantity>0)){alert('Indique au moins un aliment mangé.');return;}
+ const previous=JSON.parse(JSON.stringify(state.journal)),d=writableDay();d.entries=d.entries.filter(e=>e.id!=='plan_'+meal.id&&!e.id.startsWith('plan_'+meal.id+':'));
+ items.forEach((it,i)=>{if(it.quantity<=0)return;const food=foodById(it.foodId),values=ingredientMacros({...it,quantity:1});d.entries.push({id:'plan_'+meal.id+':'+i,name:food.name+' ('+(it.unit==='piece'?'pièces':it.unit)+')',quantityUnit:it.unit==='piece'?'pièce(s)':it.unit,quantity:it.quantity,basis:'portion',condition:food.condition,meal:meal.category,values});});
+ d.done[meal.id]=false;if(!save()){state.journal=previous;return;}document.getElementById('actualMealDialog').close();renderMeals();renderJournal();
+}
+function dateOffset(date,offset){return new Date((dayIndex(date)+offset)*86400000).toISOString().slice(0,10);}
+function duplicateYesterday(){
+ const source=state.journal[dateOffset(selectedDate,-1)];if(!source?.entries?.length){alert('Aucun aliment enregistré la veille.');return;}
+ if(!confirm('Ajouter les '+source.entries.length+' aliments de la veille au '+selectedDate+' ? Les aliments déjà présents seront conservés.'))return;
+ const previous=JSON.parse(JSON.stringify(state.journal));writableDay().entries.push(...source.entries.map(e=>({...JSON.parse(JSON.stringify(e)),id:crypto.randomUUID()})));
+ if(!save())state.journal=previous;renderMeals();renderJournal();
+}
+function setDayComplete(value){const d=writableDay(),old=d.complete;d.complete=value;if(!save())d.complete=old;renderWeeklyReview();}
+function weeklyStats(end){const days=Array.from({length:7},(_,i)=>state.journal[dateOffset(end,-i)]),logged=days.filter(d=>d?.entries?.length),complete=days.filter(d=>d?.complete===true);const totals=complete.reduce((a,d)=>{d.entries.forEach(e=>{const v=entryMacros(e);for(const k of ['kcal','p','c','f'])a[k]+=v[k];});return a;},{kcal:0,p:0,c:0,f:0});return {logged:logged.length,complete:complete.length,averages:Object.fromEntries(Object.entries(totals).map(([k,v])=>[k,complete.length?v/complete.length:0]))};}
+function renderWeeklyReview(){
+ let panel=document.getElementById('weeklyReview');if(!panel){panel=document.createElement('div');panel.id='weeklyReview';panel.className='card';document.getElementById('journalEntries').before(panel);}
+ const stats=weeklyStats(selectedDate);panel.innerHTML='<h2>Ton bilan sur 7 jours</h2><p class="note">Du '+dateOffset(selectedDate,-6)+' au '+selectedDate+' · '+stats.logged+'/7 jours renseignés · '+stats.complete+'/7 jours complets.</p><button class="secondary" onclick="duplicateYesterday()">Copier les aliments de la veille</button><label style="display:block;margin:16px 0"><input type="checkbox" style="width:auto" '+(day().complete?'checked':'')+' onchange="setDayComplete(this.checked)"> J’ai terminé de renseigner cette journée</label>'+(stats.complete?'<p><strong>'+Math.round(stats.averages.kcal)+' kcal / jour</strong> · P '+nutritionNumber(stats.averages.p)+' g · G '+nutritionNumber(stats.averages.c)+' g · L '+nutritionNumber(stats.averages.f)+' g</p>':'<p>Aucune journée complète : pas encore de moyenne fiable.</p>')+'<p class="note">Moyennes calculées uniquement sur les journées cochées complètes. Les jours manquants ne comptent pas comme zéro.</p>';
+}
 function renderJournal() {
+  renderWeeklyReview();
   const el=document.getElementById("journalEntries");
   const groups=journalGroups();
   el.innerHTML=groups.map(group=>{
@@ -650,7 +680,8 @@ function addFood(event) {
   const name=get("foodName").trim(),quantity=Number(get("foodQuantity"));
   const values={kcal:Number(get("foodKcal")),p:Number(get("foodP")),c:Number(get("foodC")),f:Number(get("foodF"))};
   if (!name || !Number.isFinite(quantity) || quantity<=0 || Object.values(values).some(v=>!Number.isFinite(v)||v<0)) return;
-  const e={id:editingId||crypto.randomUUID(),name,quantity,basis:get("foodBasis"),meal:get("foodMeal"),condition:get("foodCondition"),values};
+  const oldEntry=day().entries.find(e=>e.id===editingId);
+  const e={id:editingId||crypto.randomUUID(),name,quantity,basis:get("foodBasis"),meal:get("foodMeal"),condition:get("foodCondition"),values,...(oldEntry?.quantityUnit&&oldEntry.basis===get('foodBasis')?{quantityUnit:oldEntry.quantityUnit}:{})};
   const entries=writableDay().entries,index=entries.findIndex(x=>x.id===editingId);
   if(index>=0)entries[index]=e;else entries.push(e);
   const saved=save();resetFoodForm();renderMeals();renderJournal();renderProgress();document.getElementById("foodFeedback").textContent=saved ? "Enregistré pour le "+selectedDate+"." : "Non sauvegardé sur cet appareil.";if(saved)activateScreen("today");
@@ -668,6 +699,7 @@ function renderMeals(){
       <ul class="menu-ingredients">${m.ingredients.map(item=>`<li>${escapeText(ingredientLabel(item))}</li>`).join('')}</ul>
       <div class="menu-nutrients"><strong>${Math.round(macros.kcal)} <span>kcal</span></strong><span>Protéines <b>${nutritionNumber(macros.p)} g</b></span><span>Glucides <b>${nutritionNumber(macros.c)} g</b></span><span>Lipides <b>${nutritionNumber(macros.f)} g</b></span></div>
       <button type="button" class="${done?'secondary':'primary'}" aria-pressed="${done}" aria-label="${done?'Retirer du journal :':'J’ai mangé ce repas :'} ${escapeText(m.name)}" onclick="toggleMeal('${m.id}')">${done?'✓ Mangé · Annuler':'J’ai mangé ce repas'}</button>
+      ${!done?`<button class="secondary" type="button" style="margin-top:8px" onclick="openActualMeal('${m.id}')">Adapter les quantités mangées</button>`:''}
     </article>`;
   }).join('');
   renderProgress();
@@ -675,8 +707,8 @@ function renderMeals(){
 
 function toggleMeal(id){
  const m=meals.find(m=>m.id===id);if(!m)return;const previous=JSON.parse(JSON.stringify(state.journal)),d=writableDay();
- const index=d.entries.findIndex(e=>e.id==='plan_'+id);
- if(index>=0)d.entries.splice(index,1);else d.entries.push(menuSnapshot(m));
+ const present=mealIsDone(id);
+ if(present)d.entries=d.entries.filter(e=>e.id!=='plan_'+id&&!e.id.startsWith('plan_'+id+':'));else d.entries.push(menuSnapshot(m));
  d.done[id]=false;if(!save())state.journal=previous;renderMeals();renderJournal();
 }
 
@@ -779,13 +811,13 @@ function validateBackup(payload){
   };
   const entry=(e,withId=true)=>{
     const f=food(e);if(!['Petit-déjeuner','Déjeuner','Dîner','Collation'].includes(e.meal))fail();
-    return {...f,quantity:num(e.quantity,.001,10000),meal:e.meal,...(withId?{id:str(e.id)}:{})};
+    return {...f,quantity:num(e.quantity,.001,10000),meal:e.meal,...(['g','ml','pièce(s)'].includes(e.quantityUnit)?{quantityUnit:e.quantityUnit}:{}),...(withId?{id:str(e.id)}:{})};
   };
   const done=d=>{if(!object(d))fail();const out={};for(const m of defaultMeals)if(d[m.id]!==undefined){if(typeof d[m.id]!=='boolean')fail();out[m.id]=d[m.id];}return out;};
   const out={journalVersion:1,journal:{},weights:[],favorites:[],savedMeals:[],customFoods:[],done:{},shopping:{},settings:{}};
   for(const [key,min,max,fallback] of [['goalWeight',40,200,80],['kcalTarget',500,10000,2800],['proteinTarget',1,1000,170],['carbTarget',1,2000,360],['fatTarget',1,1000,70]])out.settings[key]=num(input.settings[key]??fallback,min,max);
   if(Object.keys(input.journal).length>10000)fail();
-  for(const [date,d] of Object.entries(input.journal)){if(!validDate(date)||!object(d))fail();const entries=array(d.entries).map(e=>entry(e));if(new Set(entries.map(e=>e.id)).size!==entries.length)fail();out.journal[date]={entries,done:done(d.done||{})};}
+  for(const [date,d] of Object.entries(input.journal)){if(!validDate(date)||!object(d))fail();const entries=array(d.entries).map(e=>entry(e));if(new Set(entries.map(e=>e.id)).size!==entries.length)fail();out.journal[date]={entries,done:done(d.done||{}),complete:d.complete===true};}
   out.weights=array(input.weights).map(w=>{if(!object(w)||!validDate(w.date)||w.date>localDate())fail();return {date:w.date,value:num(w.value,40,200)};}).sort((a,b)=>a.date.localeCompare(b.date));
   if(new Set(out.weights.map(w=>w.date)).size!==out.weights.length)fail();
   out.favorites=array(input.favorites||[]).map(food);
@@ -835,7 +867,9 @@ function renderWeight(){
   document.getElementById("currentWeight").textContent=current.toFixed(1);document.getElementById("goalWeightText").textContent=goal;
   document.getElementById("avg7").textContent=avg===null?"—":avg.toFixed(1);document.getElementById("remaining").textContent=Math.max(0,goal-current).toFixed(1);
   document.getElementById("weightHistory").innerHTML=history.length?history.slice().reverse().map(w=>`<div class="row" style="padding:8px 0;border-top:1px solid var(--line)"><span>${w.date}</span><b>${w.value.toFixed(1)} kg</b></div>`).join(""):'<p class="note">Aucune pesée enregistrée.</p>';
-  document.getElementById("weightAdvice").textContent=`Moyenne calculée sur ${last7.length} pesée(s) dans les 7 derniers jours. Pour corriger une pesée, sélectionne sa date et enregistre la nouvelle valeur.`;drawWeightChart();
+  const previous7=weekWeights(dateOffset(localDate(),-7)),previousAverage=weightAverage(previous7);
+  const trend=last7.length>=3&&previous7.length>=3 ? ` Écart entre les deux moyennes hebdomadaires : ${avg-previousAverage>=0?'+':''}${nutritionNumber(avg-previousAverage)} kg.` : ' Ajoute au moins 3 pesées par semaine sur deux semaines pour comparer les moyennes.';
+  document.getElementById("weightAdvice").textContent=`Moyenne calculée sur ${last7.length} pesée(s) dans les 7 derniers jours.`+trend+' Aucun objectif calorique ne change automatiquement. Pour corriger une pesée, sélectionne sa date et enregistre la nouvelle valeur.';drawWeightChart();
 }
 function saveSettings(){
   const specs={goalWeight:[40,200],kcalTarget:[500,10000],proteinTarget:[1,1000],carbTarget:[1,2000],fatTarget:[1,1000]},next={};
@@ -878,4 +912,3 @@ renderAll();
 </script>
 </body>
 </html>
-
