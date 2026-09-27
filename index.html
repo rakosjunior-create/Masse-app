@@ -237,6 +237,18 @@
     <div class="card">
       <h2>Ajouter un aliment</h2>
       <form id="foodForm">
+        <label for="foodSearch">Rechercher dans mes aliments</label>
+        <input id="foodSearch" type="search" placeholder="Poulet, pâtes, skyr…" oninput="renderFoodSearch()" autocomplete="off">
+        <div id="foodSearchResults" role="region" aria-label="Résultats des aliments" style="max-height:260px;overflow:auto;margin:10px 0"></div>
+        <details style="margin:16px 0"><summary>Scanner ou saisir un code-barres</summary>
+          <p class="note">Le code est envoyé à Open Food Facts pour chercher le produit. Les images de la caméra restent sur ton appareil. Connexion requise ; lecteur caméra chargé depuis jsDelivr.</p>
+          <label for="barcodeInput">Numéro du code-barres</label><input id="barcodeInput" inputmode="numeric" maxlength="14" placeholder="Ex. 3017620422003">
+          <div class="row" style="margin:10px 0"><button type="button" class="secondary" onclick="lookupBarcode()">Chercher le produit</button><button type="button" class="secondary" onclick="startBarcodeCamera()">Ouvrir la caméra</button><button type="button" class="secondary" onclick="stopBarcodeCamera()">Arrêter la caméra</button></div>
+          <video id="barcodeVideo" muted playsinline hidden style="width:100%;max-height:240px;border-radius:14px"></video>
+          <p id="barcodeStatus" role="status" class="note"></p>
+          <div id="barcodeResult"></div>
+          <p class="note">Données : <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> · licence ODbL. Compare toujours la fiche à l’étiquette.</p>
+        </details>
         <label for="favoriteSelect">Mes aliments favoris</label><div class="split"><select id="favoriteSelect"></select><button type="button" class="secondary" onclick="useFavorite()">Utiliser</button></div>
         <button type="button" class="secondary small" style="margin:8px 0 12px" onclick="deleteFavorite()">Supprimer ce favori</button>
         <label for="foodPreset">Aliments disponibles</label>
@@ -437,6 +449,7 @@ function appIcon(name){
 }
 function activateScreen(id){
   if(id!=='menuEditor'&&document.getElementById('menuEditor')?.classList.contains('active')){captureMenuDraft();if(JSON.stringify(menuDraft)!==JSON.stringify(validateMenu(meals))&&!confirm('Quitter sans enregistrer les modifications ?'))return;}
+  if(id!=='addFood')stopBarcodeCamera();
   document.querySelectorAll('.screen').forEach(el=>el.classList.toggle('active',el.id===id));
   document.querySelectorAll('nav button').forEach(el=>{el.classList.toggle('active',el.dataset.screen===id);el.setAttribute('aria-current',el.dataset.screen===id?'page':'false');});
   window.scrollTo({top:0,behavior:'instant'});
@@ -484,12 +497,36 @@ const foodPresets = {
   beef:{name:"Bavette d’aloyau",values:{kcal:133,p:20.4,c:0,f:5.67}},
   chicken:{name:"Filet de poulet sans peau",values:{kcal:110,p:23.4,c:0,f:1.5}}
 };
+let searchFoods=[],barcodeDraft=null,barcodeRequest=0,scannerGeneration=0,scannerControls=null,scannerTimer=null,scannerLoader=null;
+function normalizeFoodQuery(value){return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/œ/g,'oe');}
+function searchableFoods(){
+ const recent=[],seen=new Set();Object.keys(state.journal).filter(d=>d<=selectedDate).sort().reverse().forEach(date=>{state.journal[date].entries.slice().reverse().forEach(e=>{const key=e.name+'|'+e.basis+'|'+e.condition+'|'+(e.quantityUnit||'');if(!seen.has(key)&&recent.length<20){seen.add(key);recent.push({...e,group:'Récent'});}});});
+ return [...state.favorites.map(f=>({...f,group:'Favori'})),...recent,...foodCatalog().map(f=>({...catalogFoodSnapshot(f),group:'Catalogue'}))];
+}
+function renderFoodSearch(){const el=document.getElementById('foodSearchResults');if(!el)return;const q=normalizeFoodQuery(document.getElementById('foodSearch').value||'').trim();searchFoods=searchableFoods().filter(f=>q?q.split(/\s+/).every(word=>normalizeFoodQuery(f.name+' '+f.condition).includes(word)):f.group!=='Catalogue').slice(0,30);el.innerHTML=searchFoods.length?searchFoods.map((f,i)=>'<button type="button" class="secondary" style="display:block;width:100%;text-align:left;margin:6px 0" onclick="chooseSearchFood('+i+')">'+escapeText(f.name)+'<small style="display:block">'+f.group+' · '+escapeText(f.condition)+'</small></button>').join(''):'<p class="note">'+(q?'Aucun résultat local. Utilise le code-barres ou la saisie libre.':'Tes favoris et aliments récents apparaîtront ici. Recherche aussi dans le catalogue.')+'</p>';}
+function chooseSearchFood(index){const f=searchFoods[index];if(!f)return;document.getElementById('foodPreset').value='';fillFoodForm(f,f.quantity|| (f.basis==='100'?100:1));document.getElementById('foodFeedback').textContent='Aliment chargé. Vérifie la quantité puis enregistre.';}
+function validBarcode(value){if(!/^(\d{8}|\d{12}|\d{13}|\d{14})$/.test(value))return false;let sum=0;for(let i=value.length-2,position=0;i>=0;i--,position++)sum+=Number(value[i])*(position%2===0?3:1);return (10-sum%10)%10===Number(value.at(-1));}
+function parseBarcodeProduct(data){if(data.status!==1||!data.product)throw Error('Produit introuvable. Tu peux saisir son étiquette manuellement.');const p=data.product,n=p.nutriments||{},values={};for(const [key,field] of Object.entries({kcal:'energy-kcal_100g',p:'proteins_100g',c:'carbohydrates_100g',f:'fat_100g'})){const raw=n[field];if(raw===undefined||raw===null||raw===''||!Number.isFinite(Number(raw))||Number(raw)<0||Number(raw)>(key==='kcal'?1000:100))throw Error('Fiche nutritionnelle incomplète ou incohérente. Recopie les valeurs de l’étiquette ; aucune valeur manquante ne sera remplacée par zéro.');values[key]=Number(raw);}return {name:String(p.product_name_fr||p.product_name||'Produit scanné').slice(0,120),basis:'100',condition:'Prêt à consommer',values};}
+async function lookupBarcode(){
+ stopBarcodeCamera();const code=document.getElementById('barcodeInput').value.replace(/\s/g,''),status=document.getElementById('barcodeStatus'),request=++barcodeRequest;barcodeDraft=null;document.getElementById('barcodeResult').innerHTML='';
+ if(!validBarcode(code)){status.textContent='Vérifie le numéro : code EAN/UPC de 8, 12, 13 ou 14 chiffres avec clé valide.';return;}
+ status.textContent='Recherche dans Open Food Facts…';const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
+ try{const response=await fetch('https://world.openfoodfacts.org/api/v2/product/'+code+'.json?fields=product_name,product_name_fr,nutriments&User-Agent=MasseApp-web-1.0',{signal:controller.signal,credentials:'omit',referrerPolicy:'no-referrer'});if(!response.ok)throw Error('Service indisponible. Réessaie plus tard ou saisis l’étiquette.');const data=await response.json();if(request!==barcodeRequest)return;barcodeDraft=parseBarcodeProduct(data);const f=barcodeDraft;document.getElementById('barcodeResult').innerHTML='<h3>'+escapeText(f.name)+'</h3><p>Pour 100 g ou 100 ml, selon l’étiquette : '+f.values.kcal+' kcal · P '+f.values.p+' g · G '+f.values.c+' g · L '+f.values.f+' g</p><label for="barcodeUnit">Unité indiquée sur ton étiquette</label><select id="barcodeUnit"><option value="">Choisir…</option><option value="g">Pour 100 g</option><option value="ml">Pour 100 ml</option></select><label><input id="barcodeVerified" type="checkbox" style="width:auto"> J’ai vérifié le produit et les valeurs sur l’étiquette</label><button type="button" class="primary" onclick="useBarcodeProduct()">Charger cette fiche</button>';status.textContent='Produit trouvé. Aucun aliment ajouté au journal pour le moment.';
+ }catch(error){if(request===barcodeRequest)status.textContent=error.name==='AbortError'?'La recherche a expiré. Réessaie ou utilise la saisie libre.':error instanceof TypeError?'Connexion impossible. La recherche locale et la saisie libre restent disponibles.':error.message;}finally{clearTimeout(timeout);}
+}
+function useBarcodeProduct(){if(!barcodeDraft)return;const unit=document.getElementById('barcodeUnit').value;if(!unit||!document.getElementById('barcodeVerified').checked){alert('Choisis g ou ml et vérifie les valeurs sur l’étiquette.');return;}document.getElementById('foodPreset').value='';fillFoodForm({...barcodeDraft,quantityUnit:unit},100);document.getElementById('foodFeedback').textContent='Fiche chargée et modifiable. Indique la quantité mangée puis enregistre. Tu peux aussi la garder dans tes favoris.';}
+function loadBarcodeReader(){if(window.ZXingBrowser)return Promise.resolve();if(scannerLoader)return scannerLoader;scannerLoader=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js';const timer=setTimeout(()=>{script.remove();scannerLoader=null;reject(Error('Lecteur indisponible. Saisis le numéro du code-barres.'));},12000);script.onload=()=>{clearTimeout(timer);resolve();};script.onerror=()=>{clearTimeout(timer);script.remove();scannerLoader=null;reject(Error('Lecteur indisponible. Saisis le numéro du code-barres.'));};document.head.appendChild(script);});return scannerLoader;}
+function stopBarcodeCamera(){scannerGeneration++;clearTimeout(scannerTimer);scannerControls?.stop();scannerControls=null;const video=document.getElementById('barcodeVideo');if(video){video.srcObject?.getTracks().forEach(t=>t.stop());video.srcObject=null;video.hidden=true;}}
+async function startBarcodeCamera(){stopBarcodeCamera();const generation=scannerGeneration,status=document.getElementById('barcodeStatus');if(!navigator.mediaDevices?.getUserMedia){status.textContent='Caméra indisponible dans ce navigateur. Saisis le numéro sous le code-barres.';return;}status.textContent='Chargement du lecteur. Autorise la caméra pour scanner.';try{await loadBarcodeReader();if(generation!==scannerGeneration)return;const video=document.getElementById('barcodeVideo');video.hidden=false;const reader=new window.ZXingBrowser.BrowserMultiFormatReader();const controls=await reader.decodeFromConstraints({audio:false,video:{facingMode:{ideal:'environment'}}},video,(result,error,controls)=>{if(generation!==scannerGeneration){controls.stop();return;}if(result&&validBarcode(result.getText())){document.getElementById('barcodeInput').value=result.getText();controls.stop();stopBarcodeCamera();lookupBarcode();}});if(generation!==scannerGeneration){controls.stop();return;}scannerControls=controls;status.textContent='Cadre le code-barres avec suffisamment de lumière.';scannerTimer=setTimeout(()=>{stopBarcodeCamera();status.textContent='Lecture arrêtée après 45 secondes. Tu peux réessayer ou saisir le numéro.';},45000);}catch(error){if(generation===scannerGeneration){stopBarcodeCamera();status.textContent='Caméra ou lecteur inaccessible. Vérifie l’autorisation caméra ou saisis le numéro manuellement.';}}}
 function applyFoodPreset() {
   const id=document.getElementById("foodPreset").value;
-  const food=equivalenceFoods.find(f=>f.id===id);if(!food)return;
-  fillFoodForm(food,100);
+  const food=foodById(id);if(!food)return;
+  const prepared=catalogFoodSnapshot(food);fillFoodForm(prepared,food.unit==='piece'?1:100);
 }
+let activeFoodUnit=null;
+function catalogFoodSnapshot(f){return {name:f.name,basis:f.unit==='piece'?'portion':'100',quantityUnit:f.unit==='piece'?'pièce(s)':f.unit,condition:f.condition,values:f.unit==='piece'?ingredientMacros({foodId:f.id,quantity:1,unit:'piece'}):{...f.values}};}
 function fillFoodForm(food,quantity) {
+  activeFoodUnit=food.quantityUnit||null;
   for(const [id,v] of Object.entries({foodName:food.name,foodBasis:food.basis||"100",foodCondition:food.condition,foodQuantity:quantity,foodKcal:food.values.kcal,foodP:food.values.p,foodC:food.values.c,foodF:food.values.f}))document.getElementById(id).value=v;
   updateQuantityLabel();renderFoodPreview();
 }
@@ -504,7 +541,7 @@ function renderFoodPreview() {
   el.textContent=`Pour ta quantité : ${fmt(kcal)} kcal · Protéines ${fmt(p)} g · Lipides ${fmt(f)} g · Glucides ${fmt(c)} g`;
 }
 function checkPresetCondition() {
-  if(document.getElementById("foodPreset").value && document.getElementById("foodCondition").value!==equivalenceFoods.find(f=>f.id===document.getElementById("foodPreset").value)?.condition) {
+  if(document.getElementById("foodPreset").value && document.getElementById("foodCondition").value!==foodById(document.getElementById("foodPreset").value)?.condition) {
     document.getElementById("foodPreset").value="";
     for(const id of ["foodKcal","foodP","foodC","foodF"]) document.getElementById(id).value="";
     document.getElementById("foodFeedback").textContent="L’état pesé a changé : renseigne les valeurs correspondant à ce nouvel état avant d’enregistrer.";
@@ -596,9 +633,9 @@ function dailyTotals() {
   return [...meals.filter(m=>day().done[m.id]).map(mealMacros),...day().entries.map(entryMacros)]
     .reduce((a,m)=>{for (const k of ["kcal","p","c","f"]) a[k]+=m[k];return a;},{kcal:0,p:0,c:0,f:0});
 }
-function updateQuantityLabel() { const entry=day().entries.find(e=>e.id===editingId);document.getElementById("quantityLabel").textContent=entry?.quantityUnit&&entry.basis===document.getElementById('foodBasis').value ? 'Quantité mangée ('+entry.quantityUnit+')' : document.getElementById("foodBasis").value==="100" ? "Quantité mangée (g)" : "Nombre de pièces / portions"; }
+function updateQuantityLabel() { const entry=day().entries.find(e=>e.id===editingId),basis=document.getElementById('foodBasis').value,unit=activeFoodUnit||(entry?.basis===basis?entry.quantityUnit:null);document.getElementById('foodBasis').querySelector('option[value="100"]').textContent=unit==='ml'?'Pour 100 ml':'Pour 100 g';document.getElementById("quantityLabel").textContent=unit?'Quantité mangée ('+unit+')':basis==='100'?'Quantité mangée (g)':'Nombre de pièces / portions'; }
 function resetFoodForm() {
-  editingId=null;document.getElementById("foodForm").reset();updateQuantityLabel();renderFoodPreview();
+  editingId=null;activeFoodUnit=null;document.getElementById("foodForm").reset();updateQuantityLabel();renderFoodPreview();renderFoodSearch();
   document.getElementById("foodSubmit").textContent="Ajouter au journal";document.getElementById("cancelEdit").hidden=true;
 }
 function goToday() { changeDate(localDate()); }
@@ -666,7 +703,7 @@ function renderJournal() {
   }).join("")+`<div class="nutrition-total"><div class="nutrition-scroll" role="region" aria-label="Total de la journée" tabindex="0"><table class="nutrition-table" aria-label="Total de la journée">${nutritionHeader()}<tfoot><tr><th scope="row">TOTAL JOURNÉE</th>${nutritionCells(dailyTotals())}</tr></tfoot></table></div></div>`;
 }
 function editEntry(index) {
-  const e=day().entries[index]; if (!e) return;editingId=e.id;document.getElementById("foodPreset").value="";
+  const e=day().entries[index]; if (!e) return;editingId=e.id;activeFoodUnit=e.quantityUnit||null;document.getElementById("foodPreset").value="";
   for(const [id,v] of Object.entries({foodName:e.name,foodMeal:e.meal,foodBasis:e.basis,foodQuantity:e.quantity,foodCondition:e.condition,foodKcal:e.values.kcal,foodP:e.values.p,foodC:e.values.c,foodF:e.values.f})) document.getElementById(id).value=v;
   updateQuantityLabel();renderFoodPreview();document.getElementById("foodSubmit").textContent="Enregistrer la correction";document.getElementById("cancelEdit").hidden=false;openFoodEditor();document.getElementById("foodName").focus();
 }
@@ -681,7 +718,7 @@ function addFood(event) {
   const values={kcal:Number(get("foodKcal")),p:Number(get("foodP")),c:Number(get("foodC")),f:Number(get("foodF"))};
   if (!name || !Number.isFinite(quantity) || quantity<=0 || Object.values(values).some(v=>!Number.isFinite(v)||v<0)) return;
   const oldEntry=day().entries.find(e=>e.id===editingId);
-  const e={id:editingId||crypto.randomUUID(),name,quantity,basis:get("foodBasis"),meal:get("foodMeal"),condition:get("foodCondition"),values,...(oldEntry?.quantityUnit&&oldEntry.basis===get('foodBasis')?{quantityUnit:oldEntry.quantityUnit}:{})};
+  const e={id:editingId||crypto.randomUUID(),name,quantity,basis:get("foodBasis"),meal:get("foodMeal"),condition:get("foodCondition"),values,...(activeFoodUnit?{quantityUnit:activeFoodUnit}:oldEntry?.quantityUnit&&oldEntry.basis===get('foodBasis')?{quantityUnit:oldEntry.quantityUnit}:{})};
   const entries=writableDay().entries,index=entries.findIndex(x=>x.id===editingId);
   if(index>=0)entries[index]=e;else entries.push(e);
   const saved=save();resetFoodForm();renderMeals();renderJournal();renderProgress();document.getElementById("foodFeedback").textContent=saved ? "Enregistré pour le "+selectedDate+"." : "Non sauvegardé sur cet appareil.";if(saved)activateScreen("today");
@@ -747,7 +784,8 @@ function renderRemaining(){
 }
 function renderQuickLists(){
   const preset=document.getElementById('foodPreset'),old=preset.value;
-  preset.innerHTML='<option value="">Saisie libre</option>'+equivalenceFoods.map(f=>`<option value="${f.id}">${escapeText(f.name)} · ${f.condition}</option>`).join('');preset.value=old||'';
+  preset.innerHTML='<option value="">Saisie libre</option>'+foodCatalog().map(f=>`<option value="${escapeText(f.id)}">${escapeText(f.name)} · ${escapeText(f.condition)}</option>`).join('');preset.value=old||'';
+  renderFoodSearch();
   document.getElementById('favoriteSelect').innerHTML=state.favorites.length?state.favorites.map((f,i)=>`<option value="${i}">${escapeText(f.name)} · ${escapeText(f.condition)}</option>`).join(''):'<option value="">Aucun favori enregistré</option>';
   document.getElementById('savedMealSelect').innerHTML=state.savedMeals.length?state.savedMeals.map((m,i)=>`<option value="${i}">${escapeText(m.name)} (${m.entries.length} aliments)</option>`).join(''):'<option value="">Aucun repas enregistré</option>';
 }
@@ -755,7 +793,7 @@ function foodSnapshot(){
   const get=id=>document.getElementById(id).value;
   const values={kcal:Number(get('foodKcal')),p:Number(get('foodP')),c:Number(get('foodC')),f:Number(get('foodF'))};
   if(!get('foodName').trim()||['foodKcal','foodP','foodC','foodF'].some(id=>get(id)==='')||Object.entries(values).some(([k,v])=>!Number.isFinite(v)||v<0||v>(k==='kcal'?10000:1000)))return null;
-  return {name:get('foodName').trim(),basis:get('foodBasis'),condition:get('foodCondition'),values};
+  return {name:get('foodName').trim(),basis:get('foodBasis'),condition:get('foodCondition'),values,...(activeFoodUnit?{quantityUnit:activeFoodUnit}:{})};
 }
 function saveFavorite(){
   const f=foodSnapshot();if(!f){alert('Renseigne le nom et les quatre valeurs nutritionnelles avant de créer un favori.');return;}
@@ -807,7 +845,7 @@ function validateBackup(payload){
   const input=payload.state;if(!object(input.settings)||!object(input.journal))fail();
   const food=e=>{
     if(!object(e)||!object(e.values)||!['100','portion'].includes(e.basis)||!['Cru / sec','Cuit','Prêt à consommer'].includes(e.condition))fail();
-    return {name:str(e.name),basis:e.basis,condition:e.condition,values:{kcal:num(e.values.kcal,0,10000),p:num(e.values.p,0,1000),c:num(e.values.c,0,1000),f:num(e.values.f,0,1000)}};
+    return {name:str(e.name),basis:e.basis,condition:e.condition,...(['g','ml','pièce(s)'].includes(e.quantityUnit)?{quantityUnit:e.quantityUnit}:{}),values:{kcal:num(e.values.kcal,0,10000),p:num(e.values.p,0,1000),c:num(e.values.c,0,1000),f:num(e.values.f,0,1000)}};
   };
   const entry=(e,withId=true)=>{
     const f=food(e);if(!['Petit-déjeuner','Déjeuner','Dîner','Collation'].includes(e.meal))fail();
@@ -898,7 +936,9 @@ if("serviceWorker" in navigator){
 }
 document.getElementById("journalDate").value=selectedDate;
 document.getElementById("journalDate").addEventListener("change",e=>changeDate(e.target.value));
-document.getElementById("foodBasis").addEventListener("change",updateQuantityLabel);
+document.getElementById("foodBasis").addEventListener("change",()=>{activeFoodUnit=null;updateQuantityLabel();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopBarcodeCamera();});
+window.addEventListener('pagehide',stopBarcodeCamera);
 document.getElementById("foodForm").addEventListener("submit",addFood);
 document.getElementById("foodForm").addEventListener("input",renderFoodPreview);
 document.getElementById("foodForm").addEventListener("change",renderFoodPreview);
