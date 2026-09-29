@@ -292,14 +292,7 @@
       <div class="split">
         <div>
           <label class="small muted">Nombre de jours</label>
-          <select id="prepDays">
-            <option value="1">1 jour</option>
-            <option value="2">2 jours</option>
-            <option value="3" selected>3 jours</option>
-            <option value="4">4 jours</option>
-            <option value="5">5 jours</option>
-            <option value="7">7 jours</option>
-          </select>
+          <input id="prepDays" aria-label="Nombre de jours à préparer" type="number" min="1" max="365" step="1" inputmode="numeric" value="3" oninput="changePlanningDays(this.value)">
         </div>
         <div style="display:flex;align-items:end">
           <button class="primary" style="width:100%" onclick="renderPrep()">Calculer</button>
@@ -323,6 +316,9 @@
   <section id="shopping" class="screen">
     <div class="card">
       <div class="row"><h2>Liste de courses</h2><button class="secondary" onclick="resetShopping()">Réinitialiser</button></div>
+      <label for="shoppingDays">Nombre de jours de courses</label>
+      <input id="shoppingDays" type="number" min="1" max="365" step="1" inputmode="numeric" value="3" oninput="changePlanningDays(this.value)">
+      <p id="shoppingDaysStatus" class="note" role="status">Les quantités se recalculent automatiquement depuis ton menu.</p>
       <div id="shoppingList"></div>
     </div>
   </section>
@@ -553,6 +549,9 @@ function checkPresetCondition() {
 const equivalenceFoods=[{"id": "chicken", "name": "Filet de poulet sans peau", "condition": "Cru / sec", "group": "p", "values": {"kcal": 110, "p": 23.4, "c": 0, "f": 1.5}}, {"id": "beef", "name": "Bavette d’aloyau", "condition": "Cru / sec", "group": "p", "values": {"kcal": 133, "p": 20.4, "c": 0, "f": 5.67}}, {"id": "chickencooked", "name": "Filet de poulet sans peau, poêlé", "condition": "Cuit", "group": "p", "values": {"kcal": 138, "p": 30.1, "c": 0, "f": 2}}, {"id": "mince", "name": "Steak haché 5 % MG, cuit", "condition": "Cuit", "group": "p", "values": {"kcal": 155, "p": 25.5, "c": 0, "f": 5.9}}, {"id": "turkey", "name": "Dinde, viande rôtie", "condition": "Cuit", "group": "p", "values": {"kcal": 151, "p": 29.1, "c": 0, "f": 3.8}}, {"id": "cod", "name": "Cabillaud, au four", "condition": "Cuit", "group": "p", "values": {"kcal": 95, "p": 22.3, "c": 0, "f": 0.6}}, {"id": "tuna", "name": "Thon au naturel, égoutté", "condition": "Prêt à consommer", "group": "p", "values": {"kcal": 111, "p": 26.8, "c": 0, "f": 0.4}}, {"id": "salmon", "name": "Saumon, vapeur", "condition": "Cuit", "group": "p", "values": {"kcal": 196, "p": 23, "c": 0, "f": 11.5}}, {"id": "egg", "name": "Œuf dur, sans coquille", "condition": "Cuit", "group": "p", "values": {"kcal": 134, "p": 13.5, "c": 0.5, "f": 8.6}}, {"id": "rice", "name": "Riz blanc, cuit non salé", "condition": "Cuit", "group": "c", "values": {"kcal": 143, "p": 2.9, "c": 31.8, "f": 0.4}}, {"id": "brownrice", "name": "Riz complet, cuit non salé", "condition": "Cuit", "group": "c", "values": {"kcal": 152, "p": 3.2, "c": 32.6, "f": 1}}, {"id": "pasta", "name": "Pâtes standard, cuites non salées", "condition": "Cuit", "group": "c", "values": {"kcal": 121, "p": 4, "c": 25, "f": 0.6}}, {"id": "wholepasta", "name": "Pâtes complètes, cuites non salées", "condition": "Cuit", "group": "c", "values": {"kcal": 120, "p": 4.6, "c": 23.4, "f": 0.9}}, {"id": "potato", "name": "Pomme de terre, à l’eau", "condition": "Cuit", "group": "c", "values": {"kcal": 77, "p": 1.8, "c": 16.7, "f": 0.3}}, {"id": "sweetpotato", "name": "Patate douce, cuite", "condition": "Cuit", "group": "c", "values": {"kcal": 57, "p": 1.7, "c": 12.2, "f": 0.2}}, {"id": "quinoa", "name": "Quinoa, cuit non salé", "condition": "Cuit", "group": "c", "values": {"kcal": 140, "p": 4.7, "c": 27.9, "f": 1.1}}, {"id": "bread", "name": "Pain complet T150", "condition": "Prêt à consommer", "group": "c", "values": {"kcal": 227, "p": 8.4, "c": 44.3, "f": 1.8}}, {"id": "olive", "name": "Huile d’olive", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 900, "p": 0, "c": 0, "f": 99.9}}, {"id": "almond", "name": "Amandes avec peau", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 575, "p": 18.8, "c": 9.5, "f": 51.3}}, {"id": "walnut", "name": "Cerneaux de noix", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 686, "p": 13.3, "c": 6.9, "f": 67.3}}, {"id": "lin", "name": "Huile de lin", "condition": "Prêt à consommer", "group": "f", "values": {"kcal": 900, "p": 0, "c": 0, "f": 100}}, {"id": "wholepastadry", "name": "Pâtes complètes, sèches", "condition": "Cru / sec", "group": "c", "values": {"kcal": 338, "p": 12.6, "c": 60.6, "f": 2.5}}, {"id": "ricedry", "name": "Riz blanc, cru", "condition": "Cru / sec", "group": "c", "values": {"kcal": 348, "p": 7, "c": 78, "f": 0.9}}, {"id": "banana", "name": "Banane, sans peau", "condition": "Prêt à consommer", "group": "c", "values": {"kcal": 83, "p": 1.1, "c": 19.7, "f": 0}}, {"id": "apple", "name": "Pomme, partie comestible", "condition": "Prêt à consommer", "group": "c", "values": {"kcal": 50, "p": 0.3, "c": 11.6, "f": 0.3}}];
 const baseFoodCatalog=[...equivalenceFoods.map(f=>({...f,unit:'g'})),
  {id:'milk',name:'Lait demi-écrémé',condition:'Prêt à consommer',unit:'ml',values:{kcal:46,p:3.2,c:4.8,f:1.6}},
+ // Repères par 100 ml : Lactel Bio entier et Gazegill Organic Raw Milk. Valeurs variables selon le produit.
+ {id:'whole_milk',name:'Lait entier de vache (repère moyen)',condition:'Prêt à consommer',unit:'ml',values:{kcal:65,p:3.3,c:4.8,f:3.6}},
+ {id:'raw_milk',name:'Lait cru entier de vache (estimation)',condition:'Cru / sec',unit:'ml',values:{kcal:66,p:3.3,c:4.7,f:3.5}},
  {id:'skyr',name:'Skyr nature 0 %',condition:'Prêt à consommer',unit:'g',values:{kcal:57,p:10,c:3.9,f:.2}},
  {id:'honey',name:'Miel',condition:'Prêt à consommer',unit:'g',values:{kcal:320,p:.5,c:80,f:.5}},
  {id:'orange',name:'Orange, pulpe',condition:'Prêt à consommer',unit:'piece',gramsPerPiece:189,values:{kcal:45.5,p:.75,c:8.03,f:.2}},
@@ -763,18 +762,25 @@ function renderProgress(){
 }
 
 function menuShopping(days){const collected=new Map();for(const m of meals)for(const item of m.ingredients){const f=foodById(item.foodId);if(!f)continue;const key=f.id+'|'+item.unit;if(!collected.has(key))collected.set(key,{key,name:f.name,unit:item.unit,quantity:0});collected.get(key).quantity+=item.quantity*days;}return [...collected.values()];}
+function validPlanningDays(value){return Number.isInteger(Number(value))&&Number(value)>=1&&Number(value)<=365;}
+function savedPlanningDays(){try{const value=localStorage.getItem('masseShoppingDays');return validPlanningDays(value)?Number(value):3;}catch{return 3;}}
+function changePlanningDays(value){if(!validPlanningDays(value)){document.getElementById('shoppingDaysStatus').textContent='Saisis un nombre entier de 1 à 365 jours. Les dernières quantités calculées restent affichées.';return;}document.getElementById('prepDays').value=Number(value);document.getElementById('shoppingDays').value=Number(value);renderPrep();}
 function renderPrep(){
  const d=Number(document.getElementById('prepDays').value);
+ if(!validPlanningDays(d))return;
  document.getElementById('prepOutput').innerHTML='<h3>Ton menu pour '+d+' jour(s)</h3><p class="note">Quantités calculées depuis ton menu personnalisé.</p>'+menuShopping(d).map(x=>'<div class="row" style="padding:8px 0"><span>'+escapeText(x.name)+'</span><b>'+nutritionNumber(x.quantity)+' '+escapeText(x.unit)+'</b></div>').join('');
  renderShopping(d);
 }
-function renderShopping(days=3){
- const items=menuShopping(days);localStorage.setItem('masseShoppingDays',String(days));
+function renderShopping(days=savedPlanningDays()){
+ if(!validPlanningDays(days))return;days=Number(days);
+ document.getElementById('shoppingDays').value=days;document.getElementById('prepDays').value=days;
+ document.getElementById('shoppingDaysStatus').textContent='Quantités pour '+days+' jour(s), calculées depuis ton menu. Durée synchronisée avec Préparer.';
+ const items=menuShopping(days);try{localStorage.setItem('masseShoppingDays',String(days));}catch{}
  document.getElementById('shoppingList').innerHTML=items.map((it,i)=>'<label class="shopping-item"><input type="checkbox" '+(state.shopping[it.name]?'checked':'')+' onchange="toggleMenuShopping('+i+',this.checked,'+days+')"><span style="flex:1">'+escapeText(it.name)+'</span><b>'+nutritionNumber(it.quantity)+' '+escapeText(it.unit)+'</b></label>').join('');
 }
 function toggleMenuShopping(index,value,days){const item=menuShopping(days)[index];if(item)toggleShopping(item.name,value);}
 function toggleShopping(k,v){ state.shopping[k]=v; save(); }
-function resetShopping(){ state.shopping={}; save(); renderShopping(Number(localStorage.getItem("masseShoppingDays")||3)); }
+function resetShopping(){ state.shopping={}; save(); renderShopping(); }
 
 function renderRemaining(){
   const t=dailyTotals(),s=state.settings;
@@ -946,6 +952,8 @@ document.getElementById("foodCondition").addEventListener("change",checkPresetCo
 document.getElementById("weightDate").value=localDate();
 document.getElementById("weightDate").max=localDate();
 document.getElementById("copyDate").value=new Date((dayIndex(localDate())-1)*86400000).toISOString().slice(0,10);
+document.getElementById('prepDays').value=savedPlanningDays();
+document.getElementById('shoppingDays').value=savedPlanningDays();
 setupDesign();
 initEquivalences();
 renderAll();
