@@ -628,7 +628,7 @@ function save(preserveCompletion=false){
   try {
     let previous=null;try{previous=JSON.parse(localStorage.getItem('masseState')||'null');}catch{}
     if(!preserveCompletion&&previous?.journal)for(const [date,d] of Object.entries(state.journal)){const old=previous.journal[date];if(d.complete&&old&&(JSON.stringify(d.entries)!==JSON.stringify(old.entries)||JSON.stringify(d.done)!==JSON.stringify(old.done))){changedCompletion.push(d);d.complete=false;}}
-    localStorage.setItem("masseState",JSON.stringify(state));storageFailed=false;renderDataProtection();return true;
+    localStorage.setItem("masseState",JSON.stringify(state));storageFailed=false;renderDataProtection();queueReminderSync();return true;
   }
   catch {changedCompletion.forEach(d=>d.complete=true);storageFailed=true;renderDataProtection();alert("Impossible d’enregistrer sur cet appareil. Ne ferme pas la page : exporte une sauvegarde puis vérifie le stockage du navigateur."); return false; }
 }
@@ -944,6 +944,7 @@ function saveSettings(){
 }
 
 function renderAll(){
+  renderReminders();
   renderDataProtection();
   document.getElementById("goalWeight").value = state.settings.goalWeight;
   document.getElementById("kcalTarget").value = state.settings.kcalTarget;
@@ -952,11 +953,61 @@ function renderAll(){
 }
 
 
+let reminderTimer,reminderBusy=false,reminderMessage='Service non connecté. Les rappels ne sont pas encore actifs.';
+function reminderConfig(){try{return JSON.parse(localStorage.getItem('massePush')||'{}');}catch{return {};}}
+function storeReminderConfig(config){localStorage.setItem('massePush',JSON.stringify(config));}
+function renderReminders(){
+  let el=document.getElementById('mealReminders');if(!el){el=document.createElement('details');el.id='mealReminders';el.className='toolbox';document.getElementById('today').appendChild(el);}
+  const config=reminderConfig();
+  el.innerHTML=`<summary>Rappels des repas</summary><p class="note">Un rappel aux horaires de ton menu, sauf si tu as déjà validé le repas. Sur iPhone, ouvre Masse depuis l’écran d’accueil (iOS 16.4 ou plus). Un seul téléphone est connecté à ce service.</p><label for="pushServer">Adresse du service</label><input id="pushServer" type="url" placeholder="https://masse-notifications.…workers.dev" value="${escapeText(config.url||'')}" autocomplete="off"><label for="pushCode">Code de connexion privé</label><input id="pushCode" type="password" value="${escapeText(config.token||'')}" autocomplete="off"><label for="pushZone">Fuseau horaire</label><input id="pushZone" value="${escapeText(config.zone||'Europe/Paris')}" placeholder="Europe/Paris"><div class="quick-grid" style="margin-top:14px"><button class="primary" onclick="enableReminders()">Activer sur ce téléphone</button><button class="secondary" onclick="testReminders()">Envoyer un test</button><button class="secondary" onclick="disableReminders()">Désactiver les rappels</button></div><p id="pushFeedback" class="note" role="status">${escapeText(reminderMessage)}</p><p class="note">L’activation transmet seulement l’abonnement de ce téléphone, les noms et horaires du menu et les repas validés du jour. Les saisies doivent être synchronisées avec Internet pour annuler un rappel. La livraison dépend du téléphone et de sa connexion.</p>`;
+}
+function reminderFeedback(message){reminderMessage=message;const el=document.getElementById('pushFeedback');if(el)el.textContent=message;}
+async function reminderRequest(config,path,method='GET',body){
+  const response=await fetch(config.url+path,{method,headers:{Authorization:'Bearer '+config.token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(15000)});
+  const data=await response.json();if(!response.ok)throw Error(data.error||'Service indisponible');return data;
+}
+function reminderPayload(config,subscription){
+  const date=new Intl.DateTimeFormat('en-CA',{timeZone:config.zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),d=state.journal[date]||{entries:[],done:{}};
+  return {subscription:subscription.toJSON(),zone:config.zone,date,meals:meals.map(({id,name,time})=>({id,name,time})),done:meals.filter(m=>d.done[m.id]||d.entries.some(e=>e.id==='plan_'+m.id||e.id.startsWith('plan_'+m.id+':'))).map(m=>m.id)};
+}
+async function enableReminders(){
+  if(reminderBusy)return;reminderBusy=true;
+  try{
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window))throw Error('Ouvre Masse depuis l’écran d’accueil sur iPhone pour activer les notifications.');
+    const config={url:document.getElementById('pushServer').value.trim().replace(/\/$/,''),token:document.getElementById('pushCode').value.trim(),zone:document.getElementById('pushZone').value.trim(),enabled:false};
+    const url=new URL(config.url);if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||config.token.length<32)throw Error('Renseigne une adresse HTTPS et le code privé du service.');new Intl.DateTimeFormat('en',{timeZone:config.zone}).format();
+    // Permission must originate in the user's click, before waiting for the network.
+    if(await Notification.requestPermission()!=='granted')throw Error('Permission refusée. Autorise les notifications de Masse dans les réglages du téléphone.');
+    reminderFeedback('Connexion au service…');
+    const {publicKey}=await reminderRequest(config,'/config');
+    await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});const reg=await navigator.serviceWorker.ready;
+    const decoded=atob(publicKey.replace(/-/g,'+').replace(/_/g,'/')),key=Uint8Array.from(decoded,c=>c.charCodeAt(0));
+    let sub=await reg.pushManager.getSubscription();
+    if(sub?.options.applicationServerKey && !Array.from(new Uint8Array(sub.options.applicationServerKey)).every((v,i)=>v===key[i])){await sub.unsubscribe();sub=null;}
+    sub ||= await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
+    await reminderRequest(config,'/sync','POST',reminderPayload(config,sub));config.enabled=true;storeReminderConfig(config);reminderFeedback('Rappels connectés. Envoie un test pour vérifier la réception.');renderReminders();
+  }catch(e){reminderFeedback('Activation impossible : '+e.message);}finally{reminderBusy=false;}
+}
+function queueReminderSync(){if(!reminderConfig().enabled)return;clearTimeout(reminderTimer);reminderTimer=setTimeout(syncReminders,600);}
+async function syncReminders(){
+  const config=reminderConfig();if(!config.enabled||reminderBusy)return;
+  try{const reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();if(!sub)throw Error('Abonnement expiré : réactive les rappels');await reminderRequest(config,'/sync','POST',reminderPayload(config,sub));reminderFeedback('Horaires et repas validés synchronisés avec le service.');}
+  catch(e){reminderFeedback('Rappels non synchronisés : '+e.message+'. Réessaie en ouvrant Masse avec Internet.');}
+}
+async function testReminders(){const config=reminderConfig();if(!config.enabled){reminderFeedback('Active d’abord les rappels sur ce téléphone.');return;}try{await syncReminders();await reminderRequest(config,'/test','POST');reminderFeedback('Test envoyé au service du téléphone. Vérifie la notification reçue.');}catch(e){reminderFeedback('Test impossible : '+e.message);}}
+async function disableReminders(){
+  const config=reminderConfig();if(!config.url||!config.token){reminderFeedback('Aucun service connecté.');return;}
+  try{await reminderRequest(config,'/sync','DELETE');config.enabled=false;storeReminderConfig(config);clearTimeout(reminderTimer);const reg=await navigator.serviceWorker.ready;await (await reg.pushManager.getSubscription())?.unsubscribe();reminderFeedback('Rappels désactivés.');}
+  catch(e){reminderFeedback('Désactivation non confirmée : '+e.message+'. Réessaie avec Internet.');}
+}
+window.addEventListener('online',queueReminderSync);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueReminderSync();});
 if("serviceWorker" in navigator){
   window.addEventListener("load", async () => {
     try {
       const reg = await navigator.serviceWorker.register("./sw.js", {updateViaCache:"none"});
       await reg.update();
+      if(reminderConfig().enabled){reminderFeedback('Vérification de la synchronisation des rappels…');queueReminderSync();}
       setInterval(() => reg.update(), 60 * 1000);
     } catch (e) {
       console.warn("Service worker non disponible", e);
