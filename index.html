@@ -622,9 +622,21 @@ migrateMenuHistory(state);
 if (!state.journalVersion) { state.legacyDone = {...state.done}; state.journalVersion = 1; }
 function day() { return state.journal[selectedDate] || {entries:[],done:{}}; }
 function writableDay() { return state.journal[selectedDate] ||= {entries:[],done:{}}; }
-function save(){
-  try { localStorage.setItem("masseState",JSON.stringify(state)); return true; }
-  catch { alert("Impossible d’enregistrer sur cet appareil. Ne ferme pas la page : libère de l’espace ou vérifie le stockage du navigateur."); return false; }
+let storageFailed=false,deletedEntryUndo=null;
+function save(preserveCompletion=false){
+  const changedCompletion=[];
+  try {
+    let previous=null;try{previous=JSON.parse(localStorage.getItem('masseState')||'null');}catch{}
+    if(!preserveCompletion&&previous?.journal)for(const [date,d] of Object.entries(state.journal)){const old=previous.journal[date];if(d.complete&&old&&(JSON.stringify(d.entries)!==JSON.stringify(old.entries)||JSON.stringify(d.done)!==JSON.stringify(old.done))){changedCompletion.push(d);d.complete=false;}}
+    localStorage.setItem("masseState",JSON.stringify(state));storageFailed=false;renderDataProtection();return true;
+  }
+  catch {changedCompletion.forEach(d=>d.complete=true);storageFailed=true;renderDataProtection();alert("Impossible d’enregistrer sur cet appareil. Ne ferme pas la page : exporte une sauvegarde puis vérifie le stockage du navigateur."); return false; }
+}
+function renderDataProtection(){
+ let el=document.getElementById('dataProtection');if(!el){el=document.createElement('div');el.id='dataProtection';el.className='card';document.getElementById('journalEntries').before(el);}
+ let confirmed=null;try{const raw=localStorage.getItem('masseBackupConfirmed');if(validDate(raw))confirmed=raw;}catch{}
+ const due=!confirmed||dayIndex(localDate())-dayIndex(confirmed)>=7;
+ el.innerHTML='<h2>Mes données</h2>'+(storageFailed?'<p role="alert"><strong>Modifications non enregistrées sur cet appareil.</strong> Exporte-les avant de fermer l’application.</p>':'')+'<p class="note">'+(confirmed?'Dernière sauvegarde confirmée : '+confirmed+'.':'Aucune sauvegarde exportée confirmée.')+' '+(due?'Pense à garder une copie dans Fichiers ou iCloud Drive.':'Tes nouvelles saisies restent à exporter.')+'</p><button class="secondary" onclick="exportBackup()">Exporter mes données</button><p class="note">L’export contient toutes tes journées et tes réglages. Il ne synchronise pas les appareils.</p>'+(deletedEntryUndo?'<p role="status">Un aliment a été supprimé du '+deletedEntryUndo.date+'.</p><button class="secondary" onclick="undoDeletedEntry()">Annuler la dernière suppression</button>':'');
 }
 function escapeText(value) { return String(value).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function entryMacros(e) { const factor=e.basis==="100" ? e.quantity/100 : e.quantity; return Object.fromEntries(Object.entries(e.values).map(([k,v])=>[k,v*factor])); }
@@ -632,7 +644,7 @@ function dailyTotals() {
   return [...meals.filter(m=>day().done[m.id]).map(mealMacros),...day().entries.map(entryMacros)]
     .reduce((a,m)=>{for (const k of ["kcal","p","c","f"]) a[k]+=m[k];return a;},{kcal:0,p:0,c:0,f:0});
 }
-function updateQuantityLabel() { const entry=day().entries.find(e=>e.id===editingId),basis=document.getElementById('foodBasis').value,unit=activeFoodUnit||(entry?.basis===basis?entry.quantityUnit:null);document.getElementById('foodBasis').querySelector('option[value="100"]').textContent=unit==='ml'?'Pour 100 ml':'Pour 100 g';document.getElementById("quantityLabel").textContent=unit?'Quantité mangée ('+unit+')':basis==='100'?'Quantité mangée (g)':'Nombre de pièces / portions'; }
+function updateQuantityLabel() { const entry=day().entries.find(e=>e.id===editingId),basis=document.getElementById('foodBasis').value,unit=activeFoodUnit||(entry?.basis===basis?entry?.quantityUnit:null);document.getElementById('foodBasis').querySelector('option[value="100"]').textContent=unit==='ml'?'Pour 100 ml':'Pour 100 g';document.getElementById("quantityLabel").textContent=unit?'Quantité mangée ('+unit+')':basis==='100'?'Quantité mangée (g)':'Nombre de pièces / portions'; }
 function resetFoodForm() {
   editingId=null;activeFoodUnit=null;document.getElementById("foodForm").reset();updateQuantityLabel();renderFoodPreview();renderFoodSearch();
   document.getElementById("foodSubmit").textContent="Ajouter au journal";document.getElementById("cancelEdit").hidden=true;
@@ -707,8 +719,16 @@ function editEntry(index) {
   updateQuantityLabel();renderFoodPreview();document.getElementById("foodSubmit").textContent="Enregistrer la correction";document.getElementById("cancelEdit").hidden=false;openFoodEditor();document.getElementById("foodName").focus();
 }
 function deleteEntry(index) {
+  const entry=day().entries[index];if(!entry)return;
   if (!confirm("Supprimer cet aliment du journal ?")) return;
-  writableDay().entries.splice(index,1);save();resetFoodForm();renderMeals();renderJournal();renderProgress();
+  const previous=JSON.parse(JSON.stringify(state.journal)),oldUndo=deletedEntryUndo;deletedEntryUndo={date:selectedDate,index,entry:JSON.parse(JSON.stringify(entry))};
+  writableDay().entries.splice(index,1);if(!save()){state.journal=previous;deletedEntryUndo=oldUndo;renderDataProtection();return;}resetFoodForm();renderMeals();renderJournal();renderProgress();
+}
+function undoDeletedEntry(){
+ if(!deletedEntryUndo)return;const undo=deletedEntryUndo,previous=JSON.parse(JSON.stringify(state.journal)),d=state.journal[undo.date]||={entries:[],done:{}};
+ if(d.entries.some(e=>e.id===undo.entry.id)){alert('Cet aliment est déjà présent.');return;}
+ d.entries.splice(Math.min(undo.index,d.entries.length),0,JSON.parse(JSON.stringify(undo.entry)));deletedEntryUndo=null;
+ if(!save()){state.journal=previous;deletedEntryUndo=undo;renderDataProtection();return;}changeDate(undo.date);
 }
 function addFood(event) {
   event.preventDefault();const form=document.getElementById("foodForm");if(!form.reportValidity())return;
@@ -839,8 +859,10 @@ function makeBackup(){return {app:'Masse',version:1,exportedAt:new Date().toISOS
 function exportBackup(){
   const blob=new Blob([JSON.stringify(makeBackup(),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
   a.href=url;a.download='Masse-sauvegarde-'+localDate()+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
-  document.getElementById('backupFeedback').textContent='Export lancé. Vérifie que le fichier est enregistré dans Fichiers ou tes téléchargements.';
+  document.getElementById('backupFeedback').innerHTML='Export lancé. Vérifie que le fichier est enregistré dans Fichiers ou tes téléchargements. <button type="button" class="secondary" onclick="confirmBackupSaved()">J’ai enregistré le fichier</button>';
+  let receipt=document.getElementById('backupExportReceipt');if(!receipt){receipt=document.createElement('p');receipt.id='backupExportReceipt';receipt.setAttribute('role','status');document.getElementById('dataProtection').after(receipt);}receipt.innerHTML='Export lancé. Une fois le fichier enregistré dans Fichiers ou iCloud Drive : <button class="secondary" onclick="confirmBackupSaved()">J’ai enregistré le fichier</button>';
 }
+function confirmBackupSaved(){try{localStorage.setItem('masseBackupConfirmed',localDate());document.getElementById('backupFeedback').textContent='Sauvegarde enregistrée, confirmation du '+localDate()+'.';document.getElementById('backupExportReceipt')?.remove();renderDataProtection();}catch{alert('La confirmation ne peut pas être mémorisée sur cet appareil. Garde le fichier exporté.');}}
 function validateBackup(payload){
   const fail=()=>{throw Error('Sauvegarde invalide ou incompatible. Aucune donnée modifiée.');};
   const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
@@ -878,7 +900,7 @@ async function importBackup(input){
     if(file.size>5*1024*1024)throw Error('Fichier trop volumineux (maximum 5 Mo).');
     const candidate=validateBackup(JSON.parse(await file.text()));
     if(!confirm(`Restaurer ${Object.keys(candidate.journal).length} journée(s) et ${candidate.weights.length} pesée(s) ? Cela remplacera toutes les données actuelles de cet appareil. Exporte-les d’abord si tu veux les conserver.`)){feedback.textContent='Restauration annulée.';return;}
-    const previous=state;state=candidate;meals=state.customMenu?validateMenu(state.customMenu):validateMenu(defaultMeals);if(!save()){state=previous;throw Error('Stockage indisponible : restauration annulée.');}
+    const previous=state,previousMeals=meals;state=candidate;meals=state.customMenu?validateMenu(state.customMenu):validateMenu(defaultMeals);if(!save(true)){state=previous;meals=previousMeals;throw Error('Stockage indisponible : restauration annulée.');}deletedEntryUndo=null;
     meals=JSON.parse(JSON.stringify(state.customMenu||defaultMeals));resetFoodForm();renderAll();feedback.textContent='Sauvegarde restaurée.';
   }catch(e){feedback.textContent=e instanceof SyntaxError?'Fichier JSON illisible. Aucune donnée modifiée.':e.message;}
   finally{input.value='';}
@@ -922,6 +944,7 @@ function saveSettings(){
 }
 
 function renderAll(){
+  renderDataProtection();
   document.getElementById("goalWeight").value = state.settings.goalWeight;
   document.getElementById("kcalTarget").value = state.settings.kcalTarget;
   for(const id of ["proteinTarget","carbTarget","fatTarget"])document.getElementById(id).value=state.settings[id];
