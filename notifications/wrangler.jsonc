@@ -1,0 +1,12 @@
+{
+  "name": "masse-notifications",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-29",
+  "vars": {
+    "APP_ORIGIN": "https://rakosjunior-create.github.io",
+    "APP_URL": "https://rakosjunior-create.github.io/Masse-app/",
+    "VAPID_SUBJECT": "https://rakosjunior-create.github.io/Masse-app/"
+  },
+  "durable_objects": {"bindings": [{"name": "REMINDERS", "class_name": "MealReminders"}]},
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["MealReminders"]}]
+}
