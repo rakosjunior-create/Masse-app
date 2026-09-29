@@ -1,0 +1,8 @@
+{
+  "name": "masse-notifications",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node --test test.mjs", "deploy": "wrangler deploy", "keys": "node setup-secrets.mjs"},
+  "dependencies": {"@mmmike/web-push": "1.3.0"},
+  "devDependencies": {"wrangler": "4.40.0"}
+}
