@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<title>Masse · Configurer les rappels</title>
+<style>html{color-scheme:light dark}body{font-family:system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;line-height:1.6}h1{line-height:1.2}section{border:1px solid #8886;border-radius:18px;padding:20px;margin:20px 0}button{font:inherit;padding:12px 18px;border:0;border-radius:10px;background:#255c44;color:white;cursor:pointer}button:disabled{opacity:.5;cursor:default}label{display:block;font-weight:700;margin:20px 0 8px}textarea{box-sizing:border-box;width:100%;padding:12px;font:14px monospace;border:1px solid #8888;border-radius:10px;resize:vertical}.note{font-size:14px}#keys[hidden]{display:none}</style>
+</head><body>
+<h1>Connecter les rappels de Masse</h1>
+<p>Cette page crée les clés sur cet appareil. Elle ne les envoie à aucun serveur et ne les conserve pas après fermeture.</p>
+<section><p>Ouvre cette page sur ton Mac, puis génère les clés une seule fois pour ce service.</p><button id="generate" onclick="generateKeys()">Générer mes clés</button><p id="status" role="status"></p></section>
+<section id="keys" hidden>
+<h2>À copier dans Cloudflare</h2>
+<p>Dans <strong>masse-app → Paramètres → Variables et secrets → Ajouter une variable</strong>, crée ces trois valeurs avec le type <strong>Secret</strong>, en environnement <strong>Production</strong>. Copie les noms exactement.</p>
+<label for="publicKey">VAPID_PUBLIC_KEY</label><textarea id="publicKey" rows="2" readonly></textarea><button onclick="copyKey('publicKey')">Copier la clé publique</button>
+<label for="privateKey">VAPID_PRIVATE_KEY</label><textarea id="privateKey" rows="2" readonly></textarea><button onclick="copyKey('privateKey')">Copier la clé privée</button>
+<label for="pairing">PAIRING_TOKEN</label><textarea id="pairing" rows="2" readonly></textarea><button onclick="copyKey('pairing')">Copier le code de connexion</button>
+<p class="note">La clé privée et le code de connexion doivent rester privés. Ne les publie pas sur GitHub et ne les partage pas en capture d’écran.</p>
+<button onclick="downloadKeys()">Enregistrer une copie privée</button>
+<p>Garde cette copie dans un emplacement privé. Tu retrouveras le code <strong>PAIRING_TOKEN</strong> pour connecter ton iPhone. Réutilise ces mêmes clés ; en générer de nouvelles nécessiterait de reconnecter ton téléphone.</p>
+<h2>Ensuite, dans Masse sur ton iPhone</h2>
+<p>Ouvre Masse depuis l’écran d’accueil, puis <strong>Rappels des repas</strong>. Renseigne l’adresse HTTPS du Worker Cloudflare, le code <strong>PAIRING_TOKEN</strong> et le fuseau <strong>Europe/Paris</strong>. Active les rappels et envoie un test. Les notifications sont actives seulement une fois le téléphone connecté.</p>
+</section>
+<script>
+let generatedKeys;
+function encodeKey(bytes){return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+async function generateKeys(){
+ const button=document.getElementById('generate');button.disabled=true;
+ try{
+  const pair=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
+  const publicKey=encodeKey(await crypto.subtle.exportKey('raw',pair.publicKey)),jwk=await crypto.subtle.exportKey('jwk',pair.privateKey);
+  const token=encodeKey(crypto.getRandomValues(new Uint8Array(32)));
+  generatedKeys={VAPID_PUBLIC_KEY:publicKey,VAPID_PRIVATE_KEY:jwk.d,PAIRING_TOKEN:token};
+  document.getElementById('publicKey').value=publicKey;document.getElementById('privateKey').value=jwk.d;document.getElementById('pairing').value=token;document.getElementById('keys').hidden=false;
+  document.getElementById('status').textContent='Clés générées sur cet appareil. Enregistre une copie avant de fermer cette page.';
+ }catch{button.disabled=false;document.getElementById('status').textContent='Génération impossible. Utilise cette page en HTTPS dans un navigateur récent.';}
+}
+async function copyKey(id){try{await navigator.clipboard.writeText(document.getElementById(id).value);document.getElementById('status').textContent='Valeur copiée. Colle-la dans le champ correspondant de Cloudflare.';}catch{document.getElementById(id).select();document.getElementById('status').textContent='Sélectionne cette valeur et copie-la avec ⌘C.';}}
+function downloadKeys(){if(!generatedKeys)return;const url=URL.createObjectURL(new Blob([JSON.stringify(generatedKeys,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='Masse-cles-privees.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);document.getElementById('status').textContent='Téléchargement lancé. Vérifie que Masse-cles-privees.json est enregistré sur ton Mac.';}
+</script></body></html>
