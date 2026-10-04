@@ -954,7 +954,7 @@ function renderAll(){
 
 
 let reminderTimer,reminderBusy=false,reminderMessage='Service non connecté. Les rappels ne sont pas encore actifs.';
-function reminderConfig(){try{return JSON.parse(localStorage.getItem('massePush')||'{}');}catch{return {};}}
+function reminderConfig(){const defaults={url:'https://masse-app.rakosjunior.workers.dev',zone:'Europe/Paris'};try{return {...defaults,...JSON.parse(localStorage.getItem('massePush')||'{}')};}catch{return defaults;}}
 function storeReminderConfig(config){localStorage.setItem('massePush',JSON.stringify(config));}
 function renderReminders(){
   let el=document.getElementById('mealReminders');if(!el){el=document.createElement('details');el.id='mealReminders';el.className='toolbox';document.getElementById('today').appendChild(el);}
